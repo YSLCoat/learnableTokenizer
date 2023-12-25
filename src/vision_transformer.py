@@ -247,3 +247,21 @@ if __name__ == "__main__":
         assert out.shape == out_corr.shape, f"MSA output has shape {out.shape}, but should be {out_corr.shape}."
         
     test_MSA()
+
+    def test_ViT():
+        model = VisionTransformer(
+            patch_size = 32,
+            embed_dim = 1024,
+            num_blocks = 6,
+            num_heads = 16,
+            mlp_hidden_dim = 2048,
+            channels=3,
+            num_classes=1000,
+        )
+
+        img = torch.randn(1, 3, 256, 256)
+
+        preds = model(img)
+        assert preds.shape == (1, 1000), 'correct logits outputted'
+        
+    test_ViT()
