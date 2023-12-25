@@ -22,6 +22,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train model")
     parser.add_argument("--data_subfolder_path", default=r"F:\data")
     parser.add_argument("--data_folder_name", default=r"IN1k")
+    
     parser.add_argument("--lr_scheduler", default=True, type=bool)
     parser.add_argument("--lr", default=1e-4, type=float)
     parser.add_argument("--weight_decay", default=1e-2, type=float)
@@ -112,4 +113,4 @@ if __name__ == '__main__':
     torch.save(state_dict, output_file_path)
     print(f"Model saved as {args.model_name}")
 
-    plot(results, output_folder, args)
+    plot(results, output_file_path)

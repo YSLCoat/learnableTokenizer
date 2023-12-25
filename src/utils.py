@@ -65,32 +65,32 @@ def train_step(model: torch.nn.Module,
     train_acc = train_acc / len(dataloader)
     return train_loss, train_acc
 
-def test_step(model: torch.nn.Module, 
+def val_step(model: torch.nn.Module, 
               dataloader: torch.utils.data.DataLoader, 
               loss_fn: torch.nn.Module,
               device: torch.device) -> Tuple[float, float]:
-    """Tests a PyTorch model for a single epoch.
+    """vals a PyTorch model for a single epoch.
 
     Turns a target PyTorch model to "eval" mode and then performs
-    a forward pass on a testing dataset.
+    a forward pass on a valing dataset.
 
     Args:
-        model: A PyTorch model to be tested.
-        dataloader: A DataLoader instance for the model to be tested on.
-        loss_fn: A PyTorch loss function to calculate loss on the test data.
+        model: A PyTorch model to be valed.
+        dataloader: A DataLoader instance for the model to be valed on.
+        loss_fn: A PyTorch loss function to calculate loss on the val data.
         device: A target device to compute on (e.g. "cuda" or "cpu").
 
     Returns:
-        A tuple of testing loss and testing accuracy metrics.
-        In the form (test_loss, test_accuracy). For example:
+        A tuple of valing loss and valing accuracy metrics.
+        In the form (val_loss, val_accuracy). For example:
 
         (0.0223, 0.8985)
     """
     # Put model in eval mode
     model.eval() 
 
-    # Setup test loss and test accuracy values
-    test_loss, test_acc = 0, 0
+    # Setup val loss and val accuracy values
+    val_loss, val_acc = 0, 0
 
     # Turn on inference context manager
     with torch.inference_mode():
@@ -100,20 +100,20 @@ def test_step(model: torch.nn.Module,
             X, y = X.to(device), y.to(device)
 
             # 1. Forward pass
-            test_pred_logits = model(X)
+            val_pred_logits = model(X)
 
             # 2. Calculate and accumulate loss
-            loss = loss_fn(test_pred_logits, y)
-            test_loss += loss.item()
+            loss = loss_fn(val_pred_logits, y)
+            val_loss += loss.item()
 
             # Calculate and accumulate accuracy
-            test_pred_labels = test_pred_logits.argmax(dim=1)
-            test_acc += ((test_pred_labels == y).sum().item()/len(test_pred_labels))
+            val_pred_labels = val_pred_logits.argmax(dim=1)
+            val_acc += ((val_pred_labels == y).sum().item()/len(val_pred_labels))
 
     # Adjust metrics to get average loss and accuracy per batch 
-    test_loss = test_loss / len(dataloader)
-    test_acc = test_acc / len(dataloader)
-    return test_loss, test_acc
+    val_loss = val_loss / len(dataloader)
+    val_acc = val_acc / len(dataloader)
+    return val_loss, val_acc
 
 def train(args,
           model: torch.nn.Module, 
@@ -124,7 +124,7 @@ def train(args,
           epochs: int,
           device: torch.device,
           model_save_path) -> Dict[str, List]:
-    """Trains and tests a PyTorch model.
+    """Trains and vals a PyTorch model.
 
     Passes a target PyTorch models through train_step() and val_step()
     functions for a number of epochs, training and validatinging the model
@@ -147,29 +147,31 @@ def train(args,
         each epoch.
         In the form: {train_loss: [...],
                     train_acc: [...],
-                    test_loss: [...],
-                    test_acc: [...]} 
+                    val_loss: [...],
+                    val_acc: [...]} 
         For example if training for epochs=2: 
                     {train_loss: [2.0616, 1.0537],
                     train_acc: [0.3945, 0.3945],
-                    test_loss: [1.2641, 1.5706],
-                    test_acc: [0.3400, 0.2973]} 
+                    val_loss: [1.2641, 1.5706],
+                    val_acc: [0.3400, 0.2973]} 
     """
     # Create empty results dictionary
     results = {"train_loss": [],
         "train_acc": [],
-        "test_loss": [],
-        "test_acc": []
+        "val_loss": [],
+        "val_acc": []
     }
+    
+    best_val_loss = float('inf')
 
-    # Loop through training and testing steps for a number of epochs
+    # Loop through training and valing steps for a number of epochs
     for epoch in tqdm(range(epochs)):
         train_loss, train_acc = train_step(model=model,
                                             dataloader=train_dataloader,
                                             loss_fn=loss_fn,
                                             optimizer=optimizer,
                                             device=device)
-        test_loss, test_acc = test_step(model=model,
+        val_loss, val_acc = val_step(model=model,
             dataloader=val_dataloader,
             loss_fn=loss_fn,
             device=device)
@@ -179,28 +181,32 @@ def train(args,
             f"Epoch: {epoch+1} | "
             f"train_loss: {train_loss:.4f} | "
             f"train_acc: {train_acc:.4f} | "
-            f"test_loss: {test_loss:.4f} | "
-            f"test_acc: {test_acc:.4f}"
+            f"val_loss: {val_loss:.4f} | "
+            f"val_acc: {val_acc:.4f}"
         )
 
         # Update results dictionary
         results["train_loss"].append(train_loss)
         results["train_acc"].append(train_acc)
-        results["test_loss"].append(test_loss)
-        results["test_acc"].append(test_acc)
+        results["val_loss"].append(val_loss)
+        results["val_acc"].append(val_acc)
+        
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), model_save_path)
 
     # Return the filled results at the end of the epochs
     return results
 
-def plot(results, args):
+def plot(results, output_path):
     train_loss_trace = go.Scatter(x=list(range(len(results["train_loss"]))), y=results["train_loss"], mode='lines', name='Train Loss')
     train_acc_trace = go.Scatter(x=list(range(len(results["train_acc"]))), y=results["train_acc"], mode='lines', name='Train Accuracy')
-    test_loss_trace = go.Scatter(x=list(range(len(results["test_loss"]))), y=results["test_loss"], mode='lines', name='Test Loss')
-    test_acc_trace = go.Scatter(x=list(range(len(results["test_acc"]))), y=results["test_acc"], mode='lines', name='Test Accuracy')
+    val_loss_trace = go.Scatter(x=list(range(len(results["val_loss"]))), y=results["val_loss"], mode='lines', name='Val Loss')
+    val_acc_trace = go.Scatter(x=list(range(len(results["val_acc"]))), y=results["val_acc"], mode='lines', name='val Accuracy')
 
     layout = go.Layout(title='Training and Validation Results',
                     xaxis=dict(title='Epoch'),
                     yaxis=dict(title='Value'))
 
-    fig = go.Figure(data=[train_loss_trace, train_acc_trace, test_loss_trace, test_acc_trace], layout=layout)
-    fig.write_image("results_plot.png")
+    fig = go.Figure(data=[train_loss_trace, train_acc_trace, val_loss_trace, val_acc_trace], layout=layout)
+    fig.write_image(output_path + "results_plot.png")
