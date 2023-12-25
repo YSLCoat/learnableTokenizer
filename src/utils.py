@@ -194,6 +194,7 @@ def train(args,
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(model.state_dict(), model_save_path)
+            print(f"Model saved with val loss: {best_val_loss:.4f}.")
 
     # Return the filled results at the end of the epochs
     return results
