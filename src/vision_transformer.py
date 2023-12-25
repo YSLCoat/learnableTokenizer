@@ -153,12 +153,12 @@ class MLPBlock(nn.Module):
     
     
 class EncoderBlock(nn.Module):
-    def __init__(self, embed_dim, num_heads, mlp_ratio=4, mlp_dropout=0.1):
+    def __init__(self, embed_dim, num_heads, mlp_hidden_dim, mlp_dropout=0.1):
         super().__init__()
 
         self.embed_dim = embed_dim
         self.num_heads = num_heads
-        self.mlp_hidden_dim = mlp_ratio * embed_dim
+        self.mlp_hidden_dim = mlp_hidden_dim
 
         self.layernorm1 = nn.LayerNorm(embed_dim)
         # Initialize the attention block
@@ -173,19 +173,20 @@ class EncoderBlock(nn.Module):
         return x + self.mlp(self.layernorm2(x))
 
 class VisionTransformer(nn.Module):
-    def __init__(self, patch_size, embed_dim, num_heads, num_blocks, channels=3, num_classes=None):
+    def __init__(self, patch_size, embed_dim, num_heads, num_blocks, mlp_hidden_dim, channels=3, num_classes=None):
         super().__init__()
 
         # Store dimension sizes
         self.patch_size = patch_size
         self.embed_dim = embed_dim
+        self.mlp_hidden_dim = mlp_hidden_dim
         self.channels = channels
         self.vec_dim = patch_size**2 * channels
         self.num_heads = num_heads
 
         # Create modules
         self.tokenize = DepthwiseTokenizer(patch_size, embed_dim, channels=channels)
-        self.blocks = nn.ModuleList([EncoderBlock(embed_dim, num_heads) for _ in range(num_blocks)])
+        self.blocks = nn.ModuleList([EncoderBlock(embed_dim, num_heads, mlp_hidden_dim) for _ in range(num_blocks)])
         self.layernorm = nn.LayerNorm(embed_dim)
         
         # MLP head for classification

@@ -32,6 +32,7 @@ if __name__ == '__main__':
     parser.add_argument("--model_name", default="ViT_Base", type=str)
     parser.add_argument("--patch_size", default=16, type=int)
     parser.add_argument("--embed_dim", default=768, type=int)
+    parser.add_argument("--mlp_hidden_dim", default=3072, type=int)
     parser.add_argument("--num_attention_heads", default=12, type=int)
     parser.add_argument("--num_transformer_blocks", default=12, type=int)
     
@@ -93,7 +94,7 @@ if __name__ == '__main__':
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
     
-    model = VisionTransformer(args.patch_size, args.embed_dim, args.num_attention_heads, args.num_transformer_blocks, channels=args.n_channels, num_classes=args.n_classes).to(device)
+    model = VisionTransformer(args.patch_size, args.embed_dim, args.num_attention_heads, args.num_transformer_blocks, args.mlp_hidden_dim, channels=args.n_channels, num_classes=args.n_classes).to(device)
     summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
 
     output_file_path_best_model = os.path.join(output_folder, args.model_name + "_bestModel" + ".pt")
