@@ -2,9 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+from utils import pair
 
 class DepthwiseTokenizer(nn.Module):
-    def __init__(self, patch_size, embed_dim, channels=3):
+    def __init__(self, patch_size, num_patches, embed_dim, channels=3):
         super().__init__()
         # Store dimension sizes
         self.patch_size = patch_size
@@ -22,28 +23,8 @@ class DepthwiseTokenizer(nn.Module):
             kernel_size=self.patch_size,
             stride=self.patch_size)
         
-    def get_pos_emb(self, x):
-        # Get current number of tokens and dimension
-        b, ij, d = x.shape
-        
-        # Initialize positional embedding
-        pos_emb = x.new_empty(ij, d)
-        
-        # Initialize positions
-        pos = torch.arange(ij, dtype=x.dtype, device=x.device).unsqueeze(1)
-        
-        # Initialize denominator
-        den = -(torch.log(torch.tensor(10000.0)) / d)
-        
-        # Broadcast divisor
-        pos = pos * den * torch.arange(0, d, 2, dtype=x.dtype, device=x.device)
-        
-        # Fill embedding with alternate sinusoidal mappings
-        pos_emb[..., 0::2] = pos.sin()
-        pos_emb[..., 1::2] = pos.cos()
-        
-        # Expand to match batch size
-        return pos_emb.unsqueeze(0).expand(b, -1, -1)
+        # Add learnable position embedding
+        self.pos_embedding = nn.Parameter(torch.randn(1, num_patches + 1, embed_dim))
         
     def forward(self, x):
         p = self.patch_size
@@ -58,13 +39,17 @@ class DepthwiseTokenizer(nn.Module):
         
         # Flatten grid of patches and transpose last two dimensions
         x = x.view(b, -1, self.embed_dim)
-    
-        # Add positional embedding
-        x = x + self.get_pos_emb(x)
+        
+        b, n, _ = x.shape
         
         # Expand and concatenate class token
         cls_token = self.cls_token.expand(b, -1, -1)
-        return torch.cat([cls_token, x], dim=1)
+        
+        x = torch.cat([cls_token, x], dim=1)
+        
+        x += self.pos_embedding[:, :(n + 1)]
+    
+        return x
     
 
 def scaled_dot_product_attention(query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False, scale=None) -> torch.Tensor:
@@ -173,10 +158,17 @@ class EncoderBlock(nn.Module):
         return x + self.mlp(self.layernorm2(x))
 
 class VisionTransformer(nn.Module):
-    def __init__(self, patch_size, embed_dim, num_heads, num_blocks, mlp_hidden_dim, channels=3, num_classes=None):
+    def __init__(self, image_size, patch_size, embed_dim, num_heads, num_blocks, mlp_hidden_dim, channels=3, num_classes=None):
         super().__init__()
 
         # Store dimension sizes
+        image_height, image_width = pair(image_size)
+        patch_height, patch_width = pair(patch_size)
+        
+        assert image_height % patch_height == 0 and image_width % patch_width == 0, 'Image dimensions must be divisible by the patch size.'
+        
+        num_patches = (image_height // patch_height) * (image_width // patch_width)
+        
         self.patch_size = patch_size
         self.embed_dim = embed_dim
         self.mlp_hidden_dim = mlp_hidden_dim
@@ -185,7 +177,7 @@ class VisionTransformer(nn.Module):
         self.num_heads = num_heads
 
         # Create modules
-        self.tokenize = DepthwiseTokenizer(patch_size, embed_dim, channels=channels)
+        self.tokenize = DepthwiseTokenizer(patch_size, num_patches, embed_dim, channels=channels)
         self.blocks = nn.ModuleList([EncoderBlock(embed_dim, num_heads, mlp_hidden_dim) for _ in range(num_blocks)])
         self.layernorm = nn.LayerNorm(embed_dim)
         
@@ -221,9 +213,16 @@ if __name__ == "__main__":
         torch.manual_seed(seed)
         patch_size = 4
         embed_dim = 10
-        depth_tokenizer = DepthwiseTokenizer(patch_size, embed_dim)
+        image_size = 28
+        image_height, image_width = pair(image_size)
+        patch_height, patch_width = pair(patch_size)
+        
+        assert image_height % patch_height == 0 and image_width % patch_width == 0, 'Image dimensions must be divisible by the patch size.'
+        
+        num_patches = (image_height // patch_height) * (image_width // patch_width)
+        depth_tokenizer = DepthwiseTokenizer(patch_size, num_patches, embed_dim)
 
-        x = torch.rand(1, 3, 28, 28)
+        x = torch.rand(1, 3, image_size, image_size)
         
         depth_x = depth_tokenizer(x)
         expected_shape = (1, (28//patch_size)*(28//patch_size) + 1, embed_dim)
@@ -250,6 +249,7 @@ if __name__ == "__main__":
 
     def test_ViT():
         model = VisionTransformer(
+            image_size=256,
             patch_size = 32,
             embed_dim = 1024,
             num_blocks = 6,

@@ -211,3 +211,6 @@ def plot(results, output_path):
 
     fig = go.Figure(data=[train_loss_trace, train_acc_trace, val_loss_trace, val_acc_trace], layout=layout)
     fig.write_image(output_path + "results_plot.png")
+    
+def pair(t):
+    return t if isinstance(t, tuple) else (t, t)
