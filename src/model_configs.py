@@ -1,24 +1,45 @@
 def ViT_Small():
-    num_transformer_layers = 6
-    hidden_dim = 512
-    MLP_size = 2048
-    attention_heads = 8
-    
+    return dict(
+        num_transformer_blocks=6,
+        embed_dim=512,
+        mlp_hidden_dim=2048,
+        num_attention_heads=8
+    )
+
 def ViT_Base():
-    num_transformer_layers = 12
-    hidden_dim = 768
-    MLP_size = 3072
-    attention_heads = 12
-    
+    return dict(
+        num_transformer_blocks=12,
+        embed_dim=768,
+        mlp_hidden_dim=3072,
+        num_attention_heads=12
+    )
+
 def ViT_Large():
-    num_transformer_layers = 24
-    hidden_dim = 1024
-    MLP_size = 4096
-    attention_heads = 16
-    
+    return dict(
+        num_transformer_blocks=24,
+        embed_dim=1024,
+        mlp_hidden_dim=4096,
+        num_attention_heads=16
+    )
+
 def ViT_Huge():
-    num_transformer_layers = 32
-    hidden_dim = 1280
-    MLP_size = 5120
-    attention_heads = 16
+    return dict(
+        num_transformer_blocks=32,
+        embed_dim=1280,
+        mlp_hidden_dim=5120,
+        num_attention_heads=16
+    )
+
+def get_config(model_name):
+    config_functions = {
+        "vit_small": ViT_Small,
+        "vit_base": ViT_Base,
+        "vit_large": ViT_Large,
+        "vit_huge": ViT_Huge
+    }
     
+    if model_name.lower() in config_functions:
+        return config_functions[model_name.lower()]
+    else:
+        print(f"Warning: Model name '{model_name}' not in list of pre-defined configurations. If custom parameters are defined, these will be used. If not, default parameters will be used (ViT Base).")
+        return None

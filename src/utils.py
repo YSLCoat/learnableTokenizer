@@ -3,6 +3,8 @@ import torch
 from tqdm import tqdm
 from typing import Dict, List, Tuple
 import plotly.graph_objects as go
+import time
+from datetime import timedelta
 
 
 def train_step(model: torch.nn.Module, 
@@ -166,6 +168,7 @@ def train(args,
 
     # Loop through training and valing steps for a number of epochs
     for epoch in tqdm(range(epochs)):
+        start = time.time()
         train_loss, train_acc = train_step(model=model,
                                             dataloader=train_dataloader,
                                             loss_fn=loss_fn,
@@ -195,22 +198,40 @@ def train(args,
             best_val_loss = val_loss
             torch.save(model.state_dict(), model_save_path)
             print(f"Model saved with val loss: {best_val_loss:.4f}.")
+            
+        end = time.time()
+        if epoch==0:
+            elapsed_time_seconds = end - start
+            elapsed_time_formatted = str(timedelta(seconds=int(elapsed_time_seconds)))
+            print(f"First epoch took: {elapsed_time_formatted}. Estimated training time: {str(timedelta(seconds=int(elapsed_time_seconds * epochs)))}.")
 
     # Return the filled results at the end of the epochs
     return results
 
 def plot(results, output_path):
+    fig_loss = go.Figure()
+    fig_acc = go.Figure()
+
     train_loss_trace = go.Scatter(x=list(range(len(results["train_loss"]))), y=results["train_loss"], mode='lines', name='Train Loss')
+    val_loss_trace = go.Scatter(x=list(range(len(results["val_loss"]))), y=results["val_loss"], mode='lines', name='Validation Loss')
+
     train_acc_trace = go.Scatter(x=list(range(len(results["train_acc"]))), y=results["train_acc"], mode='lines', name='Train Accuracy')
-    val_loss_trace = go.Scatter(x=list(range(len(results["val_loss"]))), y=results["val_loss"], mode='lines', name='Val Loss')
-    val_acc_trace = go.Scatter(x=list(range(len(results["val_acc"]))), y=results["val_acc"], mode='lines', name='val Accuracy')
+    val_acc_trace = go.Scatter(x=list(range(len(results["val_acc"]))), y=results["val_acc"], mode='lines', name='Validation Accuracy')
 
-    layout = go.Layout(title='Training and Validation Results',
-                    xaxis=dict(title='Epoch'),
-                    yaxis=dict(title='Value'))
+    fig_loss.add_trace(train_loss_trace)
+    fig_loss.add_trace(val_loss_trace)
+    fig_loss.update_layout(title='Training and Validation Loss',
+                           xaxis=dict(title='Epoch'),
+                           yaxis=dict(title='Loss'))
 
-    fig = go.Figure(data=[train_loss_trace, train_acc_trace, val_loss_trace, val_acc_trace], layout=layout)
-    fig.write_image(output_path + "results_plot.png")
+    fig_acc.add_trace(train_acc_trace)
+    fig_acc.add_trace(val_acc_trace)
+    fig_acc.update_layout(title='Training and Validation Accuracy',
+                          xaxis=dict(title='Epoch'),
+                          yaxis=dict(title='Accuracy'))
+
+    fig_loss.write_image(output_path + "loss_plot.png")
+    fig_acc.write_image(output_path + "accuracy_plot.png")
     
 def pair(t):
     return t if isinstance(t, tuple) else (t, t)
