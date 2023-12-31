@@ -1,3 +1,8 @@
+"""_summary_
+Implementation based on https://github.com/lucidrains/vit-pytorch/blob/main/vit_pytorch/vit.py
+Changelist:
+Added scaled_dot_product_attention from pytorch 2.0
+"""
 import torch
 from torch import nn
 from torch.nn.functional import scaled_dot_product_attention
@@ -145,6 +150,7 @@ if __name__ == "__main__":
         img = torch.randn(1, 3, 256, 256)
 
         preds = model(img)
-        assert preds.shape == (1, 1000), 'correct logits outputted'
+        assert preds.shape == (1, 1000), 'incorrect logits outputted'
+        print(f"Test passed. Logits shape [batch_size, n_classes] :{preds.shape}")
         
     test_ViT()
