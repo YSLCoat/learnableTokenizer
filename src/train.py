@@ -26,6 +26,8 @@ if __name__ == '__main__':
     
     parser.add_argument("--lr_scheduler", default=True, type=bool)
     parser.add_argument("--lr", default=1e-4, type=float)
+    parser.add_argument("--beta_1", default=0.9, type=float)
+    parser.add_argument("--beta_2", default=0.999, type=float)
     parser.add_argument("--weight_decay", default=1e-2, type=float)
     parser.add_argument("--batch_size", default=64, type=int)
     parser.add_argument("--epochs", default=50, type=int)
@@ -101,7 +103,7 @@ if __name__ == '__main__':
     model = ViT(args.img_size, args.patch_size, args.n_classes, args.embed_dim, args.num_transformer_blocks, args.num_attention_heads, args.embed_dim * 4, channels=args.n_channels).to(device)
     summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
 
-    optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer = AdamW(model.parameters(), betas=[args.beta_1, args.beta_2], lr=args.lr, weight_decay=args.weight_decay)
     loss_criterion = nn.CrossEntropyLoss()
     
     start = time.time()
