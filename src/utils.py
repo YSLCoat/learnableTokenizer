@@ -1,11 +1,10 @@
 import torch
-
 from tqdm import tqdm
 from typing import Dict, List, Tuple
 import plotly.graph_objects as go
 import time
 from datetime import timedelta
-
+import math
 
 def train_step(model: torch.nn.Module, 
                dataloader: torch.utils.data.DataLoader, 
@@ -235,3 +234,12 @@ def plot(results, output_path):
     
 def pair(t):
     return t if isinstance(t, tuple) else (t, t)
+
+def calculate_warmup_epochs(dataset_size, batch_size, total_forward_passes):
+    # Calculate the number of batches per epoch
+    batches_per_epoch = math.ceil(dataset_size / batch_size)
+
+    # Calculate the total number of epochs needed
+    total_epochs = total_forward_passes / batches_per_epoch
+
+    return total_epochs
