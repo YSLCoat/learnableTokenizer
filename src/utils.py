@@ -121,6 +121,7 @@ def train(args,
           train_dataloader: torch.utils.data.DataLoader, 
           val_dataloader: torch.utils.data.DataLoader, 
           optimizer: torch.optim.Optimizer,
+          scheduler: torch.optim.lr_scheduler._LRScheduler,
           loss_fn: torch.nn.Module,
           epochs: int,
           device: torch.device,
@@ -167,6 +168,7 @@ def train(args,
 
     # Loop through training and valing steps for a number of epochs
     for epoch in tqdm(range(epochs)):
+        scheduler.step()
         start = time.time()
         train_loss, train_acc = train_step(model=model,
                                             dataloader=train_dataloader,
