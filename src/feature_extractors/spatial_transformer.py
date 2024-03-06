@@ -58,9 +58,10 @@ class spatialTransformer(nn.Module):
     
     
 class AttentionSpatialTransformer(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, n_channels=3) -> None:
         super(AttentionSpatialTransformer, self).__init__()
-        self.localization = nn.Sequential(nn.Conv2d(1, 16, kernel_size=7),
+        self.n_channels = n_channels
+        self.localization = nn.Sequential(nn.Conv2d(self.n_channels, 16, kernel_size=7),
                                           nn.MaxPool2d(2, stride=2),
                                           nn.ReLU(True),
                                           nn.Conv2d(16, 32, kernel_size=5),
@@ -73,7 +74,7 @@ class AttentionSpatialTransformer(nn.Module):
                                           nn.MaxPool2d(2, stride=2),
                                           nn.ReLU(True))
 
-        self.fc_loc = nn.Sequential(nn.Linear(128 * 4 * 4, 32),
+        self.fc_loc = nn.Sequential(nn.Linear(12800, 32),
                                     nn.ReLU(True),
                                     nn.Linear(32, 3))
 
@@ -84,7 +85,7 @@ class AttentionSpatialTransformer(nn.Module):
  
     def forward(self: object, x: torch.Tensor) -> torch.Tensor:
         xs = self.localization(x)
-        xs = xs.view(-1, 128 * 4 * 4)
+        xs = xs.view(-1, 12800)
         theta = self.fc_loc(xs)
 
         translation = theta[:, 1:].unsqueeze(2)
@@ -95,4 +96,4 @@ class AttentionSpatialTransformer(nn.Module):
         grid = F.affine_grid(theta, torch.Size([x.size()[0], x.size()[1], 28, 28])) # downsampling from 128x128 to 28x28
         x = F.grid_sample(x, grid)
         
-        return x, theta
+        return x#, theta
