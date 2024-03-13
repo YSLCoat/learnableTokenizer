@@ -8,11 +8,12 @@ from torch import nn
 from torch.nn.functional import scaled_dot_product_attention
 
 from feature_extractors.spatial_transformer import AttentionSpatialTransformer
-
+from learnable_tokenizers.spixelFCN.models.Spixel_single_layer import SpixelNet
 
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 
+import numpy as np
 # helpers
 
 def pair(t):
@@ -100,12 +101,14 @@ class ViT(nn.Module):
         patch_dim = channels * patch_height * patch_width
         assert pool in {'cls', 'mean'}, 'pool type must be either cls (cls token) or mean (mean pooling)'
 
-        self.to_patch_embedding = nn.Sequential(
-            Rearrange('b c (h p1) (w p2) -> b (h w) (p1 p2 c)', p1 = patch_height, p2 = patch_width),
-            nn.LayerNorm(patch_dim),
-            nn.Linear(patch_dim, dim),
-            nn.LayerNorm(dim),
-        )
+        # self.to_patch_embedding = nn.Sequential(
+        #     Rearrange('b c (h p1) (w p2) -> b (h w) (p1 p2 c)', p1 = patch_height, p2 = patch_width),
+        #     nn.LayerNorm(patch_dim),
+        #     nn.Linear(patch_dim, dim),
+        #     nn.LayerNorm(dim),
+        # )
+        
+        self.superpixel_tokenizer = SpixelNet()
         
         self.feature_extractor = AttentionSpatialTransformer(n_channels=3)
 
@@ -121,11 +124,51 @@ class ViT(nn.Module):
         self.mlp_head = nn.Linear(dim, num_classes)
 
     def forward(self, img):
-        x = self.to_patch_embedding(img)
-        b, n, _ = x.shape
+        
+        segments = self.superpixel_tokenizer(img)
+        segmentation_labels = torch.argmax(segments, dim=1)
+        
+        batch_segment_features = []
+        
+        # Iterate over each image in the batch
+        for image, segments in zip(img, segmentation_labels):
+            segmented_features = []
+            #assert 0, (image.shape, segments.shape)
+            for segment_label in np.unique(segments.cpu().detach().numpy()):
+                segment_mask = segments == segment_label
+                segmented_image = image.clone()
+                #assert 0, (segmented_image.shape, segment_mask.shape)
+                segmented_image[:, ~segment_mask]
+                segmented_feature = self.feature_extractor(segmented_image.unsqueeze(0))  # Add batch dimension
+                segmented_features.append(segmented_feature)
+                
+            batch_segment_features.append(segmented_features)
+        
+        batch_segment_features_tensor = [torch.stack(segmented_features) for segmented_features in batch_segment_features]
+        batch_segment_features_flattened = [segmented_features.view(segmented_features.size(0), -1) for segmented_features in batch_segment_features_tensor]
+        
+        max_num_segments = max(len(segmented_features) for segmented_features in batch_segment_features_flattened)
+
+        # Pad or truncate the segmented features to ensure they all have the same length
+        for i in range(len(batch_segment_features_flattened)):
+            num_segments = batch_segment_features_flattened[i].size(0)
+            if num_segments < max_num_segments:
+                # If the number of segments is less than the maximum, pad with zeros
+                padding_size = max_num_segments - num_segments
+                padding = torch.zeros(padding_size, batch_segment_features_flattened[i].size(1))
+                batch_segment_features_flattened[i] = torch.cat([batch_segment_features_flattened[i], padding], dim=0)
+            elif num_segments > max_num_segments:
+                # If the number of segments is greater than the maximum, truncate
+                batch_segment_features_flattened[i] = batch_segment_features_flattened[i][:max_num_segments]
+
+        batch_segment_features_flattened = [segmented_features.view(-1) for segmented_features in batch_segment_features_flattened]
+        batch_segment_features_flattened = torch.stack(batch_segment_features_flattened)
+        
+        #x = self.to_patch_embedding(img)
+        b, n, _ = batch_segment_features_flattened.shape
 
         cls_tokens = repeat(self.cls_token, '1 1 d -> b 1 d', b = b)
-        x = torch.cat((cls_tokens, x), dim=1)
+        x = torch.cat((cls_tokens, batch_segment_features_flattened), dim=1)
         x += self.pos_embedding[:, :(n + 1)]
         x = self.dropout(x)
 
