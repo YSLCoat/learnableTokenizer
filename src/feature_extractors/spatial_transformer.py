@@ -74,7 +74,7 @@ class AttentionSpatialTransformer(nn.Module):
                                           nn.MaxPool2d(2, stride=2),
                                           nn.ReLU(True))
 
-        self.fc_loc = nn.Sequential(nn.Linear(12800, 32),
+        self.fc_loc = nn.Sequential(nn.Linear(128*10*10, 32),
                                     nn.ReLU(True),
                                     nn.Linear(32, 3))
 
@@ -85,7 +85,7 @@ class AttentionSpatialTransformer(nn.Module):
  
     def forward(self: object, x: torch.Tensor) -> torch.Tensor:
         xs = self.localization(x)
-        xs = xs.view(-1, 12800)
+        xs = xs.view(-1, 128*10*10)
         theta = self.fc_loc(xs)
 
         translation = theta[:, 1:].unsqueeze(2)

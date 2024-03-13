@@ -112,6 +112,7 @@ for epoch in range(10):
                 segment_mask = segments == segment_label
                 segmented_image = image.clone()
                 segmented_image[:, ~segment_mask]
+                assert 0, (segmented_image.shape, segment_mask.shape)
                 segmented_feature = stn(segmented_image.unsqueeze(0))  # Add batch dimension
                 segmented_features.append(segmented_feature)
                 

@@ -10,7 +10,7 @@ import time
 import torchvision
 from torchvision import transforms
 from torch.optim import AdamW
-from vision_transformer import ViT
+from model import ViT
 from torchinfo import summary
 import litdata.litdata as litdata
 from model_configs import get_config
