@@ -6,6 +6,7 @@ Added scaled_dot_product_attention from pytorch 2.0
 import torch
 from torch import nn
 from torch.nn.functional import scaled_dot_product_attention
+from torch.nn.functional import gumbel_softmax
 
 from feature_extractors.spatial_transformer import AttentionSpatialTransformer
 from learnable_tokenizers.spixelFCN.models.Spixel_single_layer import SpixelNet
@@ -108,9 +109,9 @@ class ViT(nn.Module):
         #     nn.LayerNorm(dim),
         # )
         
-        self.superpixel_tokenizer = SpixelNet()
+        self.superpixel_tokenizer = SpixelNet().to('cuda')
         
-        self.feature_extractor = AttentionSpatialTransformer(n_channels=3)
+        self.feature_extractor = AttentionSpatialTransformer(n_channels=3).to('cuda')
 
         self.pos_embedding = nn.Parameter(torch.randn(1, num_patches + 1, dim))
         self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
@@ -126,18 +127,19 @@ class ViT(nn.Module):
     def forward(self, img):
         
         segments = self.superpixel_tokenizer(img)
-        segmentation_labels = torch.argmax(segments, dim=1)
+        
+        #segmentation_labels = gumbel_softmax(segments, tau=1, hard=False, dim=1)
+        
+        _, segmentation_labels = torch.max(segments, dim=1)
         
         batch_segment_features = []
         
         # Iterate over each image in the batch
         for image, segments in zip(img, segmentation_labels):
             segmented_features = []
-            #assert 0, (image.shape, segments.shape)
             for segment_label in np.unique(segments.cpu().detach().numpy()):
                 segment_mask = segments == segment_label
                 segmented_image = image.clone()
-                #assert 0, (segmented_image.shape, segment_mask.shape)
                 segmented_image[:, ~segment_mask]
                 segmented_feature = self.feature_extractor(segmented_image.unsqueeze(0))  # Add batch dimension
                 segmented_features.append(segmented_feature)
@@ -146,7 +148,7 @@ class ViT(nn.Module):
         
         batch_segment_features_tensor = [torch.stack(segmented_features) for segmented_features in batch_segment_features]
         batch_segment_features_flattened = [segmented_features.view(segmented_features.size(0), -1) for segmented_features in batch_segment_features_tensor]
-        
+            
         max_num_segments = max(len(segmented_features) for segmented_features in batch_segment_features_flattened)
 
         # Pad or truncate the segmented features to ensure they all have the same length
@@ -164,8 +166,13 @@ class ViT(nn.Module):
         batch_segment_features_flattened = [segmented_features.view(-1) for segmented_features in batch_segment_features_flattened]
         batch_segment_features_flattened = torch.stack(batch_segment_features_flattened)
         
+        assert 0, batch_segment_features_flattened.shape
+        
         #x = self.to_patch_embedding(img)
+        #assert 0, batch_segment_features_flattened.shape
         b, n, _ = batch_segment_features_flattened.shape
+        
+        #assert 0, (b, n)
 
         cls_tokens = repeat(self.cls_token, '1 1 d -> b 1 d', b = b)
         x = torch.cat((cls_tokens, batch_segment_features_flattened), dim=1)
@@ -177,6 +184,7 @@ class ViT(nn.Module):
         x = x.mean(dim = 1) if self.pool == 'mean' else x[:, 0]
 
         x = self.to_latent(x)
+        assert 0
         return self.mlp_head(x)
     
     

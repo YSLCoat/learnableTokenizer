@@ -78,31 +78,43 @@ postprocess = (
     )
 
 
-train_dataset = litdata.LITDataset(
-    r"IN1k",
-    r"F:\data",
-    override_extensions=[
-        'jpg',
-        'cls'
-    ],
-    train = True,
-).map_tuple(*postprocess)
+# train_dataset = litdata.LITDataset(
+#     r"IN1k",
+#     r"F:\data",
+#     override_extensions=[
+#         'jpg',
+#         'cls'
+#     ],
+#     train = True,
+# ).map_tuple(*postprocess)
 
-val_dataset = litdata.LITDataset(
-    r"IN1k",
-    r"F:\data",
-    override_extensions=[
-        'jpg',
-        'cls'
-    ],
-    train = False,
-).map_tuple(*postprocess)
+# val_dataset = litdata.LITDataset(
+#     r"IN1k",
+#     r"F:\data",
+#     override_extensions=[
+#         'jpg',
+#         'cls'
+#     ],
+#     train = False,
+# ).map_tuple(*postprocess)
 
 
-train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True)
-val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=128, shuffle=False)
-image, _ = train_dataset[3]
+# train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True)
+# val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=128, shuffle=False)
+# image, _ = train_dataset[3]
 #image = img_as_float(image)
+
+transform = torchvision.transforms.Compose([
+    torchvision.transforms.Resize((224, 224)),
+    torchvision.transforms.ToTensor(),  # Convert PIL image to tensor
+    torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))  # Normalize image pixel values
+])
+
+trainset = torchvision.datasets.CIFAR10(root='F:\data', train=True, download=True, transform=transform)
+testset = torchvision.datasets.CIFAR10(root='F:\data', train=False, download=True, transform=transform)
+
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=128, shuffle=True)
+testloader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False)
 
 args = {'train_img_height':224, 'train_img_width':224, 'epochs':10, 'input_img_height':224, 'input_img_width':224, 'downsize':16}
 
@@ -111,15 +123,21 @@ val_spixelID,  val_XY_feat_stack = init_spixel_grid(args, b_train=False)
 
 train_loss, train_acc = 0, 0
 for epoch in range(10):
-    for batch_idx, (data, target) in enumerate(train_loader):
+    for batch_idx, (data, target) in enumerate(trainloader):
         data, target = data.to(device), target.to(device)
         
         #segmented_batch = slic_layer(data)
         
         superpixel_model_output = superpixel_model(data)
         
-        segmentation_labels = torch.argmax(superpixel_model_output, dim=1)
-
+        #segmentation_labels = torch.argmax(superpixel_model_output, dim=1)
+        #_, segmentation_labels = torch.max(superpixel_model_output, dim=1)
+        
+        segmentation_labels = F.gumbel_softmax(superpixel_model_output, tau=1, hard=False, dim=1)
+        
+        _, segmentation_labels = torch.max(superpixel_model_output, dim=1)
+        
+        #assert 0, segmentation_labels.shape
         # Convert segmentation labels to numpy array for plotting
         #segmentation_labels_np = segmentation_labels.cpu().numpy()
         
@@ -170,12 +188,12 @@ for epoch in range(10):
         optimizer.step()
         
         y_pred_class = torch.argmax(torch.softmax(outputs, dim=1), dim=1)
-        correct = (y_pred_class == target).float().sum()  # Count number of correct predictions
+        correct = (y_pred_class == target).float().sum()/128 # Count number of correct predictions
         
-        print(f"Epoch {epoch + 1}, Batch {batch_idx + 1}/{len(train_loader)}, Loss: {loss.item():.4f}, Accuracy: {correct:.7f}")
+        print(f"Epoch {epoch + 1}, Batch {batch_idx + 1}/{len(trainloader)}, Loss: {loss.item():.4f}, Accuracy: {correct:.7f}")
 
     # Adjust metrics to get average loss and accuracy per batch 
-    train_loss = train_loss / len(train_loader)
-    train_acc = train_acc / len(train_loader)
+    train_loss = train_loss / len(trainloader)
+    train_acc = train_acc / len(trainloader)
     
     print(f"Epoch {epoch + 1} train loss: {train_loss:.4f}, train accuracy: {train_acc:.4f}")

@@ -18,7 +18,7 @@ from scheduler import CosineAnnealingLR_LinearWarmup
 
 from utils import train, plot, calculate_warmup_epochs
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "cpu"#"cuda" if torch.cuda.is_available() else "cpu"
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train model")
@@ -104,11 +104,11 @@ if __name__ == '__main__':
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
     
     model = ViT(args.img_size, args.patch_size, args.n_classes, args.embed_dim, args.num_transformer_blocks, args.num_attention_heads, args.mlp_hidden_dim, channels=args.n_channels).to(device)
-    summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
+    #summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
 
     warmup_epochs = calculate_warmup_epochs(len(train_dataset), args.batch_size, args.n_warmup_steps)
     optimizer = AdamW(model.parameters(), betas=[args.beta_1, args.beta_2], lr=args.lr, weight_decay=args.weight_decay)
-    scheduler = CosineAnnealingLR_LinearWarmup(optimizer, warmup_epochs, args.T_max, eta_min=0.00001, last_epoch=-1)
+    scheduler = CosineAnnealingLR_LinearWarmup(optimizer, warmup_epochs, 0.00001, 0.01, args.T_max, eta_min=0.00001, last_epoch=-1)
     loss_criterion = nn.CrossEntropyLoss()
     
     start = time.time()

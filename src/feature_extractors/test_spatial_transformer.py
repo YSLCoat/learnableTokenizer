@@ -52,7 +52,7 @@ class DenseClassifier(nn.Module):
 #stn = spatialTransformer(n_channels=3).to(device)
 stn = AttentionSpatialTransformer(n_channels=3).to(device)
 # model = CNNClassifier().to(device)
-model = DenseClassifier(21168, [50, 100], 1000).to(device)
+model = DenseClassifier(21168, [100, 100, 100, 100, 100], 10).to(device)
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(list(stn.parameters()) + list(model.parameters()), lr=0.001)
@@ -60,45 +60,58 @@ optimizer = optim.Adam(list(stn.parameters()) + list(model.parameters()), lr=0.0
 slic_layer = SLICLayer(n_segments=10, compactness=1000)
 
 
-postprocess = (
-    torchvision.transforms.Compose([
-        torchvision.transforms.Resize((224, 224)), 
-        torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-    ]),
-    nn.Identity(),
-    )
+# postprocess = (
+#     torchvision.transforms.Compose([
+#         torchvision.transforms.Resize((224, 224)), 
+#         torchvision.transforms.ToTensor(),
+#         torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+#     ]),
+#     nn.Identity(),
+#     )
 
 
-train_dataset = litdata.LITDataset(
-    r"IN1k",
-    r"F:\data",
-    override_extensions=[
-        'jpg',
-        'cls'
-    ],
-    train = True,
-).map_tuple(*postprocess)
+# train_dataset = litdata.LITDataset(
+#     r"IN1k",
+#     r"F:\data",
+#     override_extensions=[
+#         'jpg',
+#         'cls'
+#     ],
+#     train = True,
+# ).map_tuple(*postprocess)
 
-val_dataset = litdata.LITDataset(
-    r"IN1k",
-    r"F:\data",
-    override_extensions=[
-        'jpg',
-        'cls'
-    ],
-    train = False,
-).map_tuple(*postprocess)
+# val_dataset = litdata.LITDataset(
+#     r"IN1k",
+#     r"F:\data",
+#     override_extensions=[
+#         'jpg',
+#         'cls'
+#     ],
+#     train = False,
+# ).map_tuple(*postprocess)
 
 
-train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True)
-val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=128, shuffle=False)
-image, _ = train_dataset[3]
+# train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True)
+# val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=128, shuffle=False)
+# image, _ = train_dataset[3]
 #image = img_as_float(image)
+
+transform = torchvision.transforms.Compose([
+    torchvision.transforms.Resize((224, 224)),
+    torchvision.transforms.ToTensor(),  # Convert PIL image to tensor
+    torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))  # Normalize image pixel values
+])
+
+trainset = torchvision.datasets.CIFAR10(root='F:\data', train=True, download=True, transform=transform)
+testset = torchvision.datasets.CIFAR10(root='F:\data', train=False, download=True, transform=transform)
+
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=128, shuffle=True)
+testloader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False)
+
 
 train_loss, train_acc = 0, 0
 for epoch in range(10):
-    for batch_idx, (data, target) in enumerate(train_loader):
+    for batch_idx, (data, target) in enumerate(trainloader):
         data, target = data.to(device), target.to(device)
         
         segmented_batch = slic_layer(data)
@@ -112,7 +125,6 @@ for epoch in range(10):
                 segment_mask = segments == segment_label
                 segmented_image = image.clone()
                 segmented_image[:, ~segment_mask]
-                assert 0, (segmented_image.shape, segment_mask.shape)
                 segmented_feature = stn(segmented_image.unsqueeze(0))  # Add batch dimension
                 segmented_features.append(segmented_feature)
                 
@@ -147,12 +159,12 @@ for epoch in range(10):
         optimizer.step()
         
         y_pred_class = torch.argmax(torch.softmax(outputs, dim=1), dim=1)
-        correct = (y_pred_class == target).float().sum()  # Count number of correct predictions
+        correct = (y_pred_class == target).float().sum()/128 # Count number of correct predictions
         
-        print(f"Epoch {epoch + 1}, Batch {batch_idx + 1}/{len(train_loader)}, Loss: {loss.item():.4f}, Accuracy: {correct:.7f}")
+        print(f"Epoch {epoch + 1}, Batch {batch_idx + 1}/{len(trainloader)}, Loss: {loss.item():.4f}, Accuracy: {correct:.4f}")
 
     # Adjust metrics to get average loss and accuracy per batch 
-    train_loss = train_loss / len(train_loader)
-    train_acc = train_acc / len(train_loader)
+    train_loss = train_loss / len(trainloader)
+    train_acc = train_acc / len(trainloader)
     
     print(f"Epoch {epoch + 1} train loss: {train_loss:.4f}, train accuracy: {train_acc:.4f}")
