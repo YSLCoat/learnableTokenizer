@@ -58,7 +58,7 @@ class spatialTransformer(nn.Module):
     
     
 class AttentionSpatialTransformer(nn.Module):
-    def __init__(self, n_channels=3) -> None:
+    def __init__(self, output_dim, n_channels=3) -> None:
         super(AttentionSpatialTransformer, self).__init__()
         self.n_channels = n_channels
         self.localization = nn.Sequential(nn.Conv2d(self.n_channels, 16, kernel_size=7),
@@ -82,6 +82,8 @@ class AttentionSpatialTransformer(nn.Module):
         self.fc_loc[2].bias.data.zero_()
         self.fc_loc[2].bias.data.copy_(
             torch.tensor([0.2, 0, 0], dtype=torch.float)) #set scaling to start at 0.2 (~28/128)
+        
+        self.fc_final = nn.Linear(3 * 28 * 28, output_dim)
  
     def forward(self: object, x: torch.Tensor) -> torch.Tensor:
         xs = self.localization(x)
@@ -95,5 +97,9 @@ class AttentionSpatialTransformer(nn.Module):
 
         grid = F.affine_grid(theta, torch.Size([x.size()[0], x.size()[1], 28, 28])) # downsampling from 128x128 to 28x28
         x = F.grid_sample(x, grid)
+        
+        # Flatten the output and pass through the final linear layer
+        x = x.view(x.size(0), -1)  # Flatten
+        x = self.fc_final(x)  # Linear layer to get the desired output dimension
         
         return x#, theta

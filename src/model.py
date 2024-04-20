@@ -111,7 +111,7 @@ class ViT(nn.Module):
         
         self.superpixel_tokenizer = SpixelNet().to('cuda')
         
-        self.feature_extractor = AttentionSpatialTransformer(n_channels=3).to('cuda')
+        self.feature_extractor = AttentionSpatialTransformer(dim, n_channels=3).to('cuda')
 
         self.pos_embedding = nn.Parameter(torch.randn(1, num_patches + 1, dim))
         self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
@@ -124,69 +124,109 @@ class ViT(nn.Module):
 
         self.mlp_head = nn.Linear(dim, num_classes)
 
+    # def forward(self, img):
+        
+    #     segments = self.superpixel_tokenizer(img)
+        
+    #     #segmentation_labels = gumbel_softmax(segments, tau=1, hard=False, dim=1)
+        
+    #     _, segmentation_labels = torch.max(segments, dim=1)
+        
+    #     batch_segment_features = []
+        
+    #     # Iterate over each image in the batch
+    #     for image, segments in zip(img, segmentation_labels):
+    #         segmented_features = []
+    #         for segment_label in np.unique(segments.cpu().detach().numpy()):
+    #             segment_mask = segments == segment_label
+    #             segmented_image = image.clone()
+    #             segmented_image[:, ~segment_mask]
+    #             segmented_feature = self.feature_extractor(segmented_image.unsqueeze(0))  # Add batch dimension
+    #             segmented_features.append(segmented_feature)
+                
+    #         batch_segment_features.append(segmented_features)
+        
+    #     batch_segment_features_tensor = [torch.stack(segmented_features) for segmented_features in batch_segment_features]
+    #     batch_segment_features_flattened = [segmented_features.view(segmented_features.size(0), -1) for segmented_features in batch_segment_features_tensor]
+            
+    #     max_num_segments = max(len(segmented_features) for segmented_features in batch_segment_features_flattened)
+
+    #     # Pad or truncate the segmented features to ensure they all have the same length
+    #     for i in range(len(batch_segment_features_flattened)):
+    #         num_segments = batch_segment_features_flattened[i].size(0)
+    #         if num_segments < max_num_segments:
+    #             # If the number of segments is less than the maximum, pad with zeros
+    #             padding_size = max_num_segments - num_segments
+    #             padding = torch.zeros(padding_size, batch_segment_features_flattened[i].size(1))
+    #             batch_segment_features_flattened[i] = torch.cat([batch_segment_features_flattened[i], padding], dim=0)
+    #         elif num_segments > max_num_segments:
+    #             # If the number of segments is greater than the maximum, truncate
+    #             batch_segment_features_flattened[i] = batch_segment_features_flattened[i][:max_num_segments]
+
+    #     batch_segment_features_flattened = [segmented_features.view(-1) for segmented_features in batch_segment_features_flattened]
+    #     batch_segment_features_flattened = torch.stack(batch_segment_features_flattened)
+
+        
+    #     assert 0, (batch_segment_features_flattened.shape)
+    #     b, n, _ = batch_segment_features_flattened.shape
+
+    #     cls_tokens = repeat(self.cls_token, '1 1 d -> b 1 d', b = b)
+    #     x = torch.cat((cls_tokens, batch_segment_features_flattened), dim=1)
+    #     x += self.pos_embedding[:, :(n + 1)]
+    #     x = self.dropout(x)
+
+    #     x = self.transformer(x)
+
+    #     x = x.mean(dim = 1) if self.pool == 'mean' else x[:, 0]
+
+    #     x = self.to_latent(x)
+    #     assert 0
+    #     return self.mlp_head(x)
+    
     def forward(self, img):
-        
         segments = self.superpixel_tokenizer(img)
-        
-        #segmentation_labels = gumbel_softmax(segments, tau=1, hard=False, dim=1)
-        
         _, segmentation_labels = torch.max(segments, dim=1)
         
         batch_segment_features = []
-        
-        # Iterate over each image in the batch
         for image, segments in zip(img, segmentation_labels):
             segmented_features = []
-            for segment_label in np.unique(segments.cpu().detach().numpy()):
+            for segment_label in torch.unique(segments):
                 segment_mask = segments == segment_label
-                segmented_image = image.clone()
-                segmented_image[:, ~segment_mask]
+                # Apply the mask to the image and retain only relevant parts of the image
+                segmented_image = image * segment_mask.unsqueeze(0)  # Ensure the mask has the same dimension as the image
                 segmented_feature = self.feature_extractor(segmented_image.unsqueeze(0))  # Add batch dimension
-                segmented_features.append(segmented_feature)
-                
-            batch_segment_features.append(segmented_features)
-        
-        batch_segment_features_tensor = [torch.stack(segmented_features) for segmented_features in batch_segment_features]
-        batch_segment_features_flattened = [segmented_features.view(segmented_features.size(0), -1) for segmented_features in batch_segment_features_tensor]
+                # Flatten the output feature to a vector
+                flattened_feature = segmented_feature.view(-1)
+                segmented_features.append(flattened_feature)
             
-        max_num_segments = max(len(segmented_features) for segmented_features in batch_segment_features_flattened)
+            batch_segment_features.append(torch.stack(segmented_features))
 
-        # Pad or truncate the segmented features to ensure they all have the same length
-        for i in range(len(batch_segment_features_flattened)):
-            num_segments = batch_segment_features_flattened[i].size(0)
-            if num_segments < max_num_segments:
-                # If the number of segments is less than the maximum, pad with zeros
-                padding_size = max_num_segments - num_segments
-                padding = torch.zeros(padding_size, batch_segment_features_flattened[i].size(1))
-                batch_segment_features_flattened[i] = torch.cat([batch_segment_features_flattened[i], padding], dim=0)
-            elif num_segments > max_num_segments:
-                # If the number of segments is greater than the maximum, truncate
-                batch_segment_features_flattened[i] = batch_segment_features_flattened[i][:max_num_segments]
+        max_num_segments = max(len(features) for features in batch_segment_features)
+        # Pad the segmented features tensor to ensure they all have the same length
+        batch_segment_features_padded = []
+        for features in batch_segment_features:
+            if len(features) < max_num_segments:
+                # Calculate padding size for the last dimension (flattened feature dimension)
+                padding = torch.zeros(max_num_segments - len(features), features.size(1))
+                features_padded = torch.cat([features, padding], dim=0)
+            else:
+                features_padded = features[:max_num_segments]
+            batch_segment_features_padded.append(features_padded)
+        
+        batch_segment_features_tensor = torch.stack(batch_segment_features_padded)
 
-        batch_segment_features_flattened = [segmented_features.view(-1) for segmented_features in batch_segment_features_flattened]
-        batch_segment_features_flattened = torch.stack(batch_segment_features_flattened)
-        
-        assert 0, batch_segment_features_flattened.shape
-        
-        #x = self.to_patch_embedding(img)
-        #assert 0, batch_segment_features_flattened.shape
-        b, n, _ = batch_segment_features_flattened.shape
-        
-        #assert 0, (b, n)
-
-        cls_tokens = repeat(self.cls_token, '1 1 d -> b 1 d', b = b)
-        x = torch.cat((cls_tokens, batch_segment_features_flattened), dim=1)
+        b, n, d = batch_segment_features_tensor.shape
+        cls_tokens = self.cls_token.repeat(b, 1, 1)
+        x = torch.cat((cls_tokens, batch_segment_features_tensor), dim=1)
         x += self.pos_embedding[:, :(n + 1)]
         x = self.dropout(x)
 
         x = self.transformer(x)
 
-        x = x.mean(dim = 1) if self.pool == 'mean' else x[:, 0]
+        x = x.mean(dim=1) if self.pool == 'mean' else x[:, 0]
 
         x = self.to_latent(x)
-        assert 0
         return self.mlp_head(x)
-    
     
 if __name__ == "__main__":
 
