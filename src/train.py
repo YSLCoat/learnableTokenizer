@@ -71,6 +71,7 @@ if __name__ == '__main__':
     )
     if args.train_cifar_100: 
         transform = transforms.Compose([
+        transforms.Resize((args.img_size, args.img_size)),
         transforms.ToTensor(),  # Convert the image to a PyTorch tensor
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Normalize the image
 ])
