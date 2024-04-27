@@ -11,7 +11,7 @@
 
 # the important bit: unload all current modules (just in case) and load only the necessary ones
 module purge && \
-module load Python/3.10.8-GCCcore-12.2.0 CUDA/12.1.0 && \
+module load JupyterLab/3.5.0-GCCcore-11.3.0 && \
 source /projects/ec232/venvs/in5310/bin/activate && \
 pip install --user [skimage] && \
 python3 src/vision_transfromer/train.py "$@"
