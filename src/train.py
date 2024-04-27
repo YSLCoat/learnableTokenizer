@@ -12,7 +12,7 @@ from torchvision import transforms
 from torch.optim import AdamW
 from model import differentiableTokenizerVisionTransformer
 from torchinfo import summary
-import litdata as litdata
+import litdata.litdata as litdata
 from model_configs import get_config
 from scheduler import CosineAnnealingLR_LinearWarmup
 
