@@ -10,7 +10,7 @@ import time
 import torchvision
 from torchvision import transforms
 from torch.optim import AdamW
-from model import ViT
+from model import differentiableTokenizerVisionTransformer
 from torchinfo import summary
 import litdata.litdata as litdata
 from model_configs import get_config
@@ -104,7 +104,7 @@ if __name__ == '__main__':
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
     
-    model = ViT(args.img_size, args.patch_size, args.n_classes, args.embed_dim, args.num_transformer_blocks, args.num_attention_heads, args.mlp_hidden_dim, channels=args.n_channels).to(device)
+    model = differentiableTokenizerVisionTransformer(args.model_name, False, 200, args.n_classes, args.n_channels).to(device)
     #summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
 
     warmup_epochs = calculate_warmup_epochs(len(train_dataset), args.batch_size, args.n_warmup_steps)

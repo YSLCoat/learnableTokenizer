@@ -168,7 +168,7 @@ def train(args,
 
     # Loop through training and valing steps for a number of epochs
     for epoch in tqdm(range(epochs)):
-        scheduler.step()
+        #scheduler.step()
         start = time.time()
         train_loss, train_acc = train_step(model=model,
                                             dataloader=train_dataloader,
