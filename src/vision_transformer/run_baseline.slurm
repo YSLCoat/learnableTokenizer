@@ -13,4 +13,5 @@
 module purge && \
 module load Python/3.10.8-GCCcore-12.2.0 CUDA/12.1.0 && \
 source /projects/ec232/venvs/g01env/bin/activate && \
+pip install ./litdata && \
 python3 train.py "$@"
