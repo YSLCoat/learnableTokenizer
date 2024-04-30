@@ -11,7 +11,7 @@ import torchvision
 from torchvision import transforms
 from torch.optim import AdamW
 from torchinfo import summary
-import litdata.litdata as litdata
+import quixdata
 from model_configs import get_config
 from scheduler import CosineAnnealingLR_LinearWarmup
 
@@ -82,7 +82,7 @@ if __name__ == '__main__':
         # Download and load the CIFAR-100 testing dataset
         val_dataset = torchvision.datasets.CIFAR100(root=args.data_subfolder_path, train=False, download=True, transform=transform)
     else:            
-        train_dataset = litdata.LITDataset(
+        train_dataset = quixdata.QuixDataset(
             args.data_folder_name,
             args.data_subfolder_path,
             override_extensions=[
@@ -92,7 +92,7 @@ if __name__ == '__main__':
             train = True,
         ).map_tuple(*postprocess)
 
-        val_dataset = litdata.LITDataset(
+        val_dataset = quixdata.QuixDataset(
             args.data_folder_name,
             args.data_subfolder_path,
             override_extensions=[
