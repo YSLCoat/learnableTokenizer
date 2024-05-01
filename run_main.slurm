@@ -13,8 +13,4 @@
 module purge && \
 module load Python/3.10.8-GCCcore-12.2.0 CUDA/12.1.0 && \
 source /projects/ec232/venvs/g01env/bin/activate && \
-cd src/learnable_tokenizers/spixelFCN/third_party/cython/ && \
-pip install Cython && \
-python setup.py install && \
-cd ../../../.. && \
 python3 src/train.py "$@"
