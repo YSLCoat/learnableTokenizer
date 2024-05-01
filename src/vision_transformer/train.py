@@ -39,7 +39,7 @@ if __name__ == '__main__':
     parser.add_argument("--T_max", default=20000, type=int, help="Number of iterations/epochs for cosine annealing scheduler from max to min lr. Typicall 10000, 20000 or 30000.")
     parser.add_argument("--eta_min", default=0.00001, type=float, help="Lowest LR for cosine annealing scheduler. Typically 0.00001 or 0.000001.")
     
-    parser.add_argument("--model_name", type=str, default='vit_base', help="Insert vit_small, vit_base, vit_large or vit_huge for presets. Enter a custom name if using custom parameters.")
+    parser.add_argument("--model_name", type=str, default='vit_base_patch16_224', help="Insert vit_small, vit_base, vit_large or vit_huge for presets. Enter a custom name if using custom parameters.")
     parser.add_argument("--embed_dim", default=768, type=int)
     parser.add_argument("--mlp_hidden_dim", default=3072, type=int)
     parser.add_argument("--num_attention_heads", default=12, type=int)
@@ -105,7 +105,7 @@ if __name__ == '__main__':
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
     
-    model = timm.create_model('vit_base_patch16_224', pretrained=False, num_classes=args.n_classes).to(device)  # Load a Vision Transformer model
+    model = timm.create_model(args.model_name, pretrained=False, num_classes=args.n_classes).to(device)  # Load a Vision Transformer model
 
     #summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
 
