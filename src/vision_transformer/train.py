@@ -102,8 +102,8 @@ if __name__ == '__main__':
             train = False,
         ).map_tuple(*postprocess)
 
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
     
     model = timm.create_model(args.model_name, pretrained=False, num_classes=args.n_classes).to(device)  # Load a Vision Transformer model
 
