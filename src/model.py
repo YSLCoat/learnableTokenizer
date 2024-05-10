@@ -14,42 +14,34 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class differentiableSuperpixelEmbedding(nn.Module):
     def __init__(self, max_segments, n_channels=3, embed_dim=768):
         super().__init__()
-        
         self.superpixel_tokenizer = SpixelNet().to('cuda')
         self.feature_extractor = AttentionSpatialTransformer(embed_dim, n_channels=n_channels).to('cuda')
-        
+        self.max_segments = max_segments  # This should be the maximum expected number of segments
+
     def forward(self, img):
         segments = self.superpixel_tokenizer(img)
         _, segmentation_labels = torch.max(segments, dim=1)
-        
+
         batch_segment_features = []
         for image, segments in zip(img, segmentation_labels):
-            segmented_features = []
-            for segment_label in torch.unique(segments):
-                segment_mask = segments == segment_label
-                # Apply the mask to the image and retain only relevant parts of the image
-                segmented_image = image * segment_mask.unsqueeze(0)  # Ensure the mask has the same dimension as the image
-                segmented_feature = self.feature_extractor(segmented_image.unsqueeze(0))  # Add batch dimension
-                # Flatten the output feature to a vector
-                flattened_feature = segmented_feature.view(-1)
-                segmented_features.append(flattened_feature)
+            # Collect all segment images for this batch
+            segmented_images = [image * (segments == label).unsqueeze(0) for label in torch.unique(segments)]
+            segmented_images = torch.stack(segmented_images)
             
-            batch_segment_features.append(torch.stack(segmented_features))
+            # Process all segments at once
+            segmented_features = self.feature_extractor(segmented_images)
+            flattened_features = segmented_features.view(segmented_features.shape[0], -1)
 
-        max_num_segments = max(len(features) for features in batch_segment_features)
-        # Pad the segmented features tensor to ensure they all have the same length
-        batch_segment_features_padded = []
-        for features in batch_segment_features:
-            if len(features) < max_num_segments:
-                # Calculate padding size for the last dimension (flattened feature dimension)
-                padding = torch.zeros(max_num_segments - len(features), features.size(1))
-                features_padded = torch.cat([features, padding], dim=0)
-            else:
-                features_padded = features[:max_num_segments]
-            batch_segment_features_padded.append(features_padded)
-        
-        batch_segment_features_tensor = torch.stack(batch_segment_features_padded)
-        
+            # Efficient padding to max_segments
+            if flattened_features.size(0) < self.max_segments:
+                padding_size = self.max_segments - flattened_features.size(0)
+                padding = torch.zeros(padding_size, flattened_features.size(1), device=flattened_features.device)
+                flattened_features = torch.cat([flattened_features, padding], dim=0)
+
+            batch_segment_features.append(flattened_features)
+
+        # Stack all batch features and ensure they are padded to max_segments
+        batch_segment_features_tensor = torch.stack(batch_segment_features)
         return batch_segment_features_tensor
 
 class differentiableTokenizerVisionTransformer(nn.Module):
@@ -68,7 +60,7 @@ class differentiableTokenizerVisionTransformer(nn.Module):
         ).to(device)
 
         self.vit.patch_embed = self.patch_embed
-        self.vit.pos_embed = nn.Parameter(torch.randn(1, max_segments, self.embed_dim) * .02)
+        self.vit.pos_embed = nn.Parameter(torch.randn(1, max_segments + 1, self.embed_dim) * .02)
         self.vit.cls_token = nn.Parameter(torch.randn(1, 1, self.embed_dim)) 
         
         
@@ -77,7 +69,7 @@ class differentiableTokenizerVisionTransformer(nn.Module):
         b, n, d = x.shape
         cls_tokens = self.vit.cls_token.repeat(b, 1, 1)
         x = torch.cat((cls_tokens, x), dim=1)
-        x += self.vit.pos_embed[:, :(n + 1)] # n is the number of segments
+        x += self.vit.pos_embed[:, :] # n is the number of segments
         x = self.vit.patch_drop(x)
         x = self.vit.norm_pre(x)
         if self.vit.grad_checkpointing and not torch.jit.is_scripting():
