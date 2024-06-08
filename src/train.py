@@ -18,7 +18,7 @@ from scheduler import CosineAnnealingLR_LinearWarmup
 
 from utils import train, plot, calculate_warmup_epochs
 
-device = "cpu"#"cuda" if torch.cuda.is_available() else "cpu"
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train model")
