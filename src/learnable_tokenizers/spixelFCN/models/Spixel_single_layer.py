@@ -17,7 +17,7 @@ class SpixelNet(nn.Module):
         super(SpixelNet,self).__init__()
 
         self.batchNorm = batchNorm
-        self.assign_ch = 9
+        self.assign_ch = 196
 
         self.conv0a = conv(self.batchNorm, 3, 16, kernel_size=3)
         self.conv0b = conv(self.batchNorm, 16, 16, kernel_size=3)
