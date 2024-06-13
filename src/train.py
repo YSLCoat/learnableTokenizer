@@ -104,7 +104,7 @@ if __name__ == '__main__':
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
     
-    model = differentiableTokenizerVisionTransformer(args.model_name, False, 20, args.n_classes, args.n_channels).to(device)
+    model = differentiableTokenizerVisionTransformer(args.model_name, False, 50, args.n_classes, args.n_channels).to(device)
     #summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
 
     warmup_epochs = calculate_warmup_epochs(len(train_dataset), args.batch_size, args.n_warmup_steps)
