@@ -50,6 +50,7 @@ if __name__ == '__main__':
     parser.add_argument("--weight_decay", default=1e-2, type=float)
     parser.add_argument("--batch_size", default=64, type=int)
     parser.add_argument("--epochs", default=50, type=int)
+    parser.add_argument("--save_every", default=1, type=int)
     
     parser.add_argument("--start_lr", default=0.000001, type=float)
     parser.add_argument("--n_warmup_steps", default=10000, type=int)
