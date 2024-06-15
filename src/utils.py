@@ -245,3 +245,19 @@ def calculate_warmup_epochs(dataset_size, batch_size, total_forward_passes):
     total_epochs = total_forward_passes / batches_per_epoch
 
     return total_epochs
+
+def verify_model_name(model_name):
+    # List of ViT models with image size 224
+    vit_models_224 = [
+        'vit_tiny_patch16_224',
+        'vit_small_patch16_224',
+        'vit_base_patch16_224',
+        'vit_large_patch16_224',
+        'vit_huge_patch14_224'
+    ]
+    
+    # Check if the provided model name is in the list
+    if model_name in vit_models_224:
+        print("Loading model config for: ", model_name)
+    else:
+        assert 0, "Model configuration not found in timm."

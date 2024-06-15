@@ -45,7 +45,7 @@ class differentiableSuperpixelEmbedding(nn.Module):
         return batch_segment_features_tensor
 
 class differentiableTokenizerVisionTransformer(nn.Module):
-    def __init__(self, model_name, pretrained, max_segments, num_classes, num_channels):
+    def __init__(self, model_name, max_segments, num_classes, num_channels, pretrained=False):
         super().__init__()
         
         
