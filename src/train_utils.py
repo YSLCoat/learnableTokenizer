@@ -74,8 +74,8 @@ class Trainer:
         correct_train = 0
         total_train = 0
         for source, targets in tqdm(self.train_data):
-            source = source.to(self.local_rank)
-            targets = targets.to(self.local_rank)
+            source = source.to(self.gpu_id)
+            targets = targets.to(self.gpu_id)
             loss, preds = self._run_batch(source, targets, train=True)
             train_loss += loss
             correct_train += (preds == targets).sum().item()
@@ -88,8 +88,8 @@ class Trainer:
         correct_val = 0
         total_val = 0
         for source, targets in tqdm(self.val_data):
-            source = source.to(self.local_rank)
-            targets = targets.to(self.local_rank)
+            source = source.to(self.gpu_id)
+            targets = targets.to(self.gpu_id)
             loss, preds = self._run_batch(source, targets, train=False)
             val_loss += loss
             correct_val += (preds == targets).sum().item()
