@@ -65,7 +65,7 @@ if __name__ == '__main__':
     parser.add_argument("--n_classes", type=int, required=True)
     parser.add_argument("--n_channels", default=3, type=int)
     parser.add_argument("--img_size", default=224, type=int)
-    parser.add_argument("--patch_size", default=16, type=int)
+    parser.add_argument("--n_segments", default=50, type=int)
     
     args = parser.parse_args()
     world_size = torch.cuda.device_count()
