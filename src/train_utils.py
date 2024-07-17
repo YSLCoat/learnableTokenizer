@@ -55,11 +55,11 @@ class Trainer:
             self.model.eval()  # Set the model to evaluation mode
             with torch.no_grad():
                 output = self.model(source)
-                loss = torch.nn.CrossEntropyLoss(output, targets)
+                loss = torch.nn.CrossEntropyLoss()(output, targets)
                 return loss.item(), output.argmax(dim=1)
 
         output = self.model(source)
-        loss = torch.nn.CrossEntropyLoss(output, targets)
+        loss = torch.nn.CrossEntropyLoss()(output, targets)
         loss.backward()
         self.optimizer.step()
         
