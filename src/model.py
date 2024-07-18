@@ -21,28 +21,37 @@ class differentiableSuperpixelEmbedding(nn.Module):
     def forward(self, img):
         segments = self.superpixel_tokenizer(img)
         _, segmentation_labels = torch.max(segments, dim=1)
+        
+        all_segmented_images = []
+        batch_segment_indices = []
 
-        batch_segment_features = []
-        for image, segments in zip(img, segmentation_labels):
-            # Collect all segment images for this batch
-            segmented_images = [image * (segments == label).unsqueeze(0) for label in torch.unique(segments)]
-            segmented_images = torch.stack(segmented_images)
-            
-            # Process all segments at once
-            segmented_features = self.feature_extractor(segmented_images)
-            flattened_features = segmented_features.view(segmented_features.shape[0], -1)
+        for batch_idx, (image, segments) in enumerate(zip(img, segmentation_labels)):
+            unique_segments = torch.unique(segments)
+            for label in unique_segments:
+                segment_mask = (segments == label).unsqueeze(0)
+                segmented_image = image * segment_mask
+                all_segmented_images.append(segmented_image)
+                batch_segment_indices.append((batch_idx, label))
+        
+        # Convert list to tensor for batch processing
+        all_segmented_images = torch.stack(all_segmented_images)
+        
+        # Process all segments in one batch
+        all_segmented_features = self.feature_extractor(all_segmented_images)
+        flattened_features = all_segmented_features.view(all_segmented_features.size(0), -1)
+        
+        # Initialize tensor to hold batch features, with padding to max_segments
+        batch_segment_features = torch.zeros((img.size(0), self.max_segments, flattened_features.size(1)), device=img.device)
 
-            # Efficient padding to max_segments
-            if flattened_features.size(0) < self.max_segments:
-                padding_size = self.max_segments - flattened_features.size(0)
-                padding = torch.zeros(padding_size, flattened_features.size(1), device=flattened_features.device)
-                flattened_features = torch.cat([flattened_features, padding], dim=0)
+        # Assign the features back to the appropriate positions in the batch
+        segment_counts = torch.zeros(img.size(0), dtype=torch.long, device=img.device)
+        for (batch_idx, _), feature in zip(batch_segment_indices, flattened_features):
+            segment_idx = segment_counts[batch_idx]
+            if segment_idx < self.max_segments:
+                batch_segment_features[batch_idx, segment_idx, :] = feature
+                segment_counts[batch_idx] += 1
 
-            batch_segment_features.append(flattened_features)
-
-        # Stack all batch features and ensure they are padded to max_segments
-        batch_segment_features_tensor = torch.stack(batch_segment_features)
-        return batch_segment_features_tensor
+        return batch_segment_features
 
 class differentiableTokenizerVisionTransformer(nn.Module):
     def __init__(self, model_name, pretrained, max_segments, num_classes, num_channels):
