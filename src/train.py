@@ -48,6 +48,7 @@ if __name__ == '__main__':
     parser.add_argument("--n_channels", default=3, type=int)
     parser.add_argument("--img_size", default=224, type=int)
     parser.add_argument("--patch_size", default=16, type=int)
+    parser.add_argument("--n_segments", default=16, type=int)
     
     parser.add_argument("--train_cifar_100", action='store_true')
     
@@ -104,7 +105,7 @@ if __name__ == '__main__':
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
     
-    model = differentiableTokenizerVisionTransformer(args.model_name, False, 20, args.n_classes, args.n_channels).to(device)
+    model = differentiableTokenizerVisionTransformer(args.model_name, False, args.n_segments, args.n_classes, args.n_channels).to(device)
     #summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
 
     warmup_epochs = calculate_warmup_epochs(len(train_dataset), args.batch_size, args.n_warmup_steps)

@@ -14,7 +14,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class differentiableSuperpixelEmbedding(nn.Module):
     def __init__(self, max_segments, n_channels=3, embed_dim=768):
         super().__init__()
-        self.superpixel_tokenizer = SpixelNet().to('cuda')
+        self.superpixel_tokenizer = SpixelNet(max_segments).to('cuda')
         self.feature_extractor = AttentionSpatialTransformer(embed_dim, n_channels=n_channels).to('cuda')
         self.max_segments = max_segments  # This should be the maximum expected number of segments
 
