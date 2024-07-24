@@ -12,49 +12,54 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class differentiableSuperpixelEmbedding(nn.Module):
-    def __init__(self, max_segments, n_channels=3, embed_dim=768):
+    def __init__(self, n_segments, n_channels, embed_dim, device):
         super().__init__()
-        self.superpixel_tokenizer = SpixelNet(max_segments).to('cuda')
-        self.feature_extractor = AttentionSpatialTransformer(embed_dim, n_channels=n_channels).to('cuda')
-        self.max_segments = max_segments  # This should be the maximum expected number of segments
+        self.superpixel_tokenizer = SpixelNet(n_segments).to(device)
+        self.feature_extractor = AttentionSpatialTransformer(embed_dim, n_channels=n_channels).to(device)
+        self.n_segments = n_segments  # This should be the maximum expected number of segments
 
     def forward(self, img):
         segments = self.superpixel_tokenizer(img)
         _, segmentation_labels = torch.max(segments, dim=1)
         
-        all_segmented_images = []
-        batch_segment_indices = []
-
-        for batch_idx, (image, segments) in enumerate(zip(img, segmentation_labels)):
-            unique_segments = torch.unique(segments)
-            for label in unique_segments:
-                segment_mask = (segments == label).unsqueeze(0)
-                segmented_image = image * segment_mask
-                all_segmented_images.append(segmented_image)
-                batch_segment_indices.append((batch_idx, label))
+        batch_size, _, height, width = img.size()
+        n_segments = self.n_segments
         
-        # Convert list to tensor for batch processing
-        all_segmented_images = torch.stack(all_segmented_images)
+        # Initialize a tensor to store segmented images
+        all_segmented_images = torch.zeros((batch_size, n_segments, *img.shape[1:]), device=img.device)
+        
+        # Get unique segment labels and their counts for each image in the batch
+        unique_segments_per_batch = [torch.unique(segmentation_labels[batch_idx]) for batch_idx in range(batch_size)]
+        max_unique_segments = max([len(unique_segments) for unique_segments in unique_segments_per_batch])
+        
+        # Stack all segment labels to a fixed size tensor for vectorized operations
+        all_unique_segments = torch.zeros((batch_size, max_unique_segments), dtype=torch.long, device=img.device)
+        for batch_idx, unique_segments in enumerate(unique_segments_per_batch):
+            all_unique_segments[batch_idx, :len(unique_segments)] = unique_segments
+        
+        # Create masks for all segments
+        segment_masks = (segmentation_labels.unsqueeze(1) == all_unique_segments.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, height, width))
+        
+        # Ensure we do not exceed n_segments
+        segment_masks = segment_masks[:, :n_segments, :, :]
+        
+        # Expand masks to match the input image channels
+        segment_masks = segment_masks.unsqueeze(2).expand(-1, -1, img.size(1), -1, -1)
+        
+        # Apply masks to the images
+        all_segmented_images = (img.unsqueeze(1) * segment_masks).view(-1, *img.shape[1:])
         
         # Process all segments in one batch
         all_segmented_features = self.feature_extractor(all_segmented_images)
         flattened_features = all_segmented_features.view(all_segmented_features.size(0), -1)
         
-        # Initialize tensor to hold batch features, with padding to max_segments
-        batch_segment_features = torch.zeros((img.size(0), self.max_segments, flattened_features.size(1)), device=img.device)
-
-        # Assign the features back to the appropriate positions in the batch
-        segment_counts = torch.zeros(img.size(0), dtype=torch.long, device=img.device)
-        for (batch_idx, _), feature in zip(batch_segment_indices, flattened_features):
-            segment_idx = segment_counts[batch_idx]
-            if segment_idx < self.max_segments:
-                batch_segment_features[batch_idx, segment_idx, :] = feature
-                segment_counts[batch_idx] += 1
-
+        # Reshape the features to the original batch and segment structure
+        batch_segment_features = flattened_features.view(batch_size, n_segments, -1)
+        
         return batch_segment_features
 
 class differentiableTokenizerVisionTransformer(nn.Module):
-    def __init__(self, model_name, pretrained, max_segments, num_classes, num_channels):
+    def __init__(self, model_name, pretrained, n_segments, num_classes, num_channels, device):
         super().__init__()
         
         
@@ -63,13 +68,14 @@ class differentiableTokenizerVisionTransformer(nn.Module):
         self.embed_dim = self.vit.embed_dim
         
         self.patch_embed = differentiableSuperpixelEmbedding(
-            max_segments=max_segments,
+            n_segments=n_segments,
             n_channels=num_channels,
-            embed_dim=self.embed_dim
+            embed_dim=self.embed_dim,
+            device=device
         ).to(device)
 
         self.vit.patch_embed = self.patch_embed
-        self.vit.pos_embed = nn.Parameter(torch.randn(1, max_segments + 1, self.embed_dim) * .02)
+        self.vit.pos_embed = nn.Parameter(torch.randn(1, n_segments + 1, self.embed_dim) * .02)
         self.vit.cls_token = nn.Parameter(torch.randn(1, 1, self.embed_dim)) 
         
         
