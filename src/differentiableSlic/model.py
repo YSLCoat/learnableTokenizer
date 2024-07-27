@@ -54,7 +54,7 @@ class SSNModel(nn.Module):
             return sparse_ssn_iter(pixel_f, self.nspix, self.n_iter)
 
 
-    def feature_extract(self, x):
+    def feature_extract(self, x, pos_scale=1.0):
         height, width = x.shape[-2:]
         nspix_per_axis = int(math.sqrt(self.nspix))
         pos_scale = pos_scale * max(nspix_per_axis/height, nspix_per_axis/width)

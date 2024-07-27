@@ -23,8 +23,8 @@ def convert_label(label):
 
 class BSDS:
     def __init__(self, root, split="train", color_transforms=None, geo_transforms=None):
-        self.gt_dir = os.path.join(root, "BSDS500/data/groundTruth", split)
-        self.img_dir = os.path.join(root, "BSDS500/data/images", split)
+        self.gt_dir = os.path.join(root, "BSDS500\data\ground_truth", split)
+        self.img_dir = os.path.join(root, "BSDS500\data\images", split)
 
         self.index = os.listdir(self.gt_dir)
 
