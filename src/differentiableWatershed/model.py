@@ -88,9 +88,9 @@ class DifferentiableFloodingProcess(nn.Module):
         return labeled
 
 
-class LearnableWatershed(nn.Module):
+class differentiableWatershed(nn.Module):
     def __init__(self, num_markers=3):
-        super(LearnableWatershed, self).__init__()
+        super(differentiableWatershed, self).__init__()
         self.sobel_filter = LearnableSobelFilter()
         self.marker_generator = LearnableMarkerGenerator(num_markers=num_markers)
         self.flooding_process = DifferentiableFloodingProcess(num_classes=num_markers)

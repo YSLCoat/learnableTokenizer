@@ -33,7 +33,7 @@ class differentiableSuperpixelEmbedding(nn.Module):
         max_unique_segments = max([len(unique_segments) for unique_segments in unique_segments_per_batch])
         
         # Stack all segment labels to a fixed size tensor for vectorized operations
-        all_unique_segments = torch.zeros((batch_size, max_unique_segments), dtype=torch.long, device=img.device)
+        all_unique_segments = torch.zeros((batch_size, n_segments), dtype=torch.long, device=img.device)
         for batch_idx, unique_segments in enumerate(unique_segments_per_batch):
             all_unique_segments[batch_idx, :len(unique_segments)] = unique_segments
         
