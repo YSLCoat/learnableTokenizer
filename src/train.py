@@ -83,7 +83,7 @@ if __name__ == '__main__':
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
     
     model = differentiableTokenizerVisionTransformer(args.model_name, False, args.n_segments, args.n_classes, args.n_channels, device).to(device)
-    summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
+    #summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
 
     optimizer = AdamW(model.parameters(), betas=[args.beta_1, args.beta_2], lr=args.lr, weight_decay=args.weight_decay)
     loss_criterion = nn.CrossEntropyLoss()

@@ -19,21 +19,18 @@ class differentiableSuperpixelEmbedding(nn.Module):
         self.n_segments = n_segments  # This should be the maximum expected number of segments
 
     def forward(self, img):
-        segments = self.superpixel_tokenizer(img)
+        segments = self.superpixel_tokenizer(img) # shape (batch_size, n_segments, height, width)
         _, segmentation_labels = torch.max(segments, dim=1)
         
-        batch_size, _, height, width = img.size()
+        batch_size, _, height, width = img.size() # shape (batch_size, n_channels, height, width)
         n_segments = self.n_segments
-        
-        # Initialize a tensor to store segmented images
-        all_segmented_images = torch.zeros((batch_size, n_segments, *img.shape[1:]), device=img.device)
-        
+
         # Get unique segment labels and their counts for each image in the batch
         unique_segments_per_batch = [torch.unique(segmentation_labels[batch_idx]) for batch_idx in range(batch_size)]
-        max_unique_segments = max([len(unique_segments) for unique_segments in unique_segments_per_batch])
         
-        # Stack all segment labels to a fixed size tensor for vectorized operations
-        all_unique_segments = torch.zeros((batch_size, n_segments), dtype=torch.long, device=img.device)
+        # Create a mask for valid segments in all_unique_segments
+        all_unique_segments = torch.full((batch_size, n_segments), -1, dtype=torch.long, device=img.device)
+        
         for batch_idx, unique_segments in enumerate(unique_segments_per_batch):
             all_unique_segments[batch_idx, :len(unique_segments)] = unique_segments
         
@@ -47,7 +44,7 @@ class differentiableSuperpixelEmbedding(nn.Module):
         segment_masks = segment_masks.unsqueeze(2).expand(-1, -1, img.size(1), -1, -1)
         
         # Apply masks to the images
-        all_segmented_images = (img.unsqueeze(1) * segment_masks).view(-1, *img.shape[1:])
+        all_segmented_images = (img.unsqueeze(1) * segment_masks).view(-1, *img.shape[1:]) # shape (n_segments * batch_size, n_channels, height, width)
         
         # Process all segments in one batch
         all_segmented_features = self.feature_extractor(all_segmented_images)
