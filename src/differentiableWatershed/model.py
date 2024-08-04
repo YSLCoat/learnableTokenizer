@@ -62,20 +62,60 @@ class LearnableMarkerGenerator(nn.Module): # relatively simple boilerplate code 
         return markers
 
 class DifferentiableFloodingProcessWithSDF(nn.Module):
+    """
+    Differentiable Flooding Process with Signed Distance Function (SDF)
+
+    This module performs a differentiable flooding process, similar to the watershed algorithm, 
+    to propagate marker information across an image. The process uses a combination of 
+    gradient information, marker affinities, and signed distance functions (SDF) to iteratively 
+    update label probabilities.
+
+    Args:
+        num_classes (int): The number of distinct marker classes.
+        num_iterations (int, optional): The number of iterations to perform the flooding process. Default is 10.
+
+    Methods:
+        forward(gradient, markers):
+            Forward pass to perform the differentiable flooding process.
+            
+            Args:
+                gradient (torch.Tensor): A tensor of shape (batch_size, 1, height, width) representing the gradient magnitudes of the input image.
+                markers (torch.Tensor): A tensor of shape (batch_size, num_markers, height, width) representing the initial marker locations.
+                
+            Returns:
+                torch.Tensor: A tensor of shape (batch_size, 1, height, width) containing the final labeled image after the flooding process.
+    """
     def __init__(self, num_classes, num_iterations=10):
         super(DifferentiableFloodingProcessWithSDF, self).__init__()
         self.num_classes = num_classes
         self.num_iterations = num_iterations
     
     def forward(self, gradient, markers):
-        b, c, h, w = gradient.size()
+        # b, c, h, w = gradient.size()
         markers_one_hot = F.one_hot(markers.squeeze(1), num_classes=self.num_classes).permute(0, 3, 1, 2).float()
+        
+        """
+        The markers are converted to one-hot encoding. 
+        The squeeze(1) removes the channel dimension from markers, one_hot converts the integer labels to one-hot encoded format, 
+        and permute(0, 3, 1, 2) rearranges the dimensions to match the input format. 
+        The result is a tensor of shape (b, num_classes, h, w).
+        """
+        
+        
         labeled = markers_one_hot.clone()
         sdf = torch.stack([compute_sdf(markers[:, i, :, :]) for i in range(markers.size(1))], dim=1)
         
         for _ in range(self.num_iterations):
             affinity = F.avg_pool2d(labeled, kernel_size=3, stride=1, padding=1)
             labeled = F.softmax(affinity + gradient + sdf, dim=1)
+            
+        """
+        The flooding process iteratively updates the labeled tensor:
+
+        Affinity Calculation: avg_pool2d computes the average value in a 3x3 neighborhood for each pixel. This step promotes the spread of label information by smoothing.
+        Label Update: The labeled tensor is updated by combining the affinity map, the gradient, and the SDF, followed by applying the softmax function. 
+        The softmax ensures the outputs are probabilities, facilitating the propagation of labels influenced by gradient and SDF information.
+        """
         
         labeled = torch.argmax(labeled, dim=1, keepdim=True)
         
