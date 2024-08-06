@@ -4,14 +4,14 @@ import torch.nn.functional as F
 import torchvision.transforms as transforms
 
 # SDF func
-def compute_sdf(marker):
-    # Compute the distance transform for foreground (marker)
-    fg_dist = torch.cdist(marker.float(), torch.ones_like(marker.float()))
-    # Compute the distance transform for background (1 - marker)
-    bg_dist = torch.cdist(1 - marker.float(), torch.ones_like(marker.float()))
-    # The SDF is the difference between the background distance and the foreground distance
-    sdf = bg_dist - fg_dist
-    return sdf
+# def compute_sdf(marker):
+#     # Compute the distance transform for foreground (marker)
+#     fg_dist = torch.cdist(marker.float(), torch.ones_like(marker.float()))
+#     # Compute the distance transform for background (1 - marker)
+#     bg_dist = torch.cdist(1 - marker.float(), torch.ones_like(marker.float()))
+#     # The SDF is the difference between the background distance and the foreground distance
+#     sdf = bg_dist - fg_dist
+#     return sdf
 
 class LearnableSobelFilter(nn.Module): # Starting with learnable sobel filter, might go over to fully learnable edge detection function later
     def __init__(self):
