@@ -8,13 +8,14 @@ import argparse
 import torch.nn as nn
 import time
 import torchvision
+import sys
+sys.path.append(r'D:\MSc_Data_Science_UiO\Thesis\learnableTokenizer\src')
 from torchvision import transforms
 from torch.optim import AdamW
-from .model import LearnableWatershedWithSDF
+from differentiableWatershed.model import LearnableWatershedWithRNN
 from torchinfo import summary
 from differentiableSlic.lib.dataset.bsds import BSDS
 from differentiableSlic.lib.dataset import augmentation
-
 from utils import train, plot, calculate_warmup_epochs
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -29,7 +30,7 @@ if __name__ == '__main__':
     parser.add_argument("--beta_1", default=0.9, type=float)
     parser.add_argument("--beta_2", default=0.999, type=float)
     parser.add_argument("--weight_decay", default=1e-2, type=float)
-    parser.add_argument("--batch_size", default=64, type=int)
+    parser.add_argument("--batch_size", default=128, type=int)
     parser.add_argument("--epochs", default=50, type=int)
     
     parser.add_argument("--n_classes", type=int, required=True)
@@ -45,16 +46,16 @@ if __name__ == '__main__':
     train_loader = torch.utils.data.DataLoader(train_dataset, args.batch_size, shuffle=True, drop_last=True, num_workers=0)
 
     test_dataset = BSDS(args.data_subfolder_path, split="val")
-    val_loader = torch.utils.data.DataLoader(test_dataset, 1, shuffle=False, drop_last=False)
+    val_loader = torch.utils.data.DataLoader(test_dataset, args.batch_size, shuffle=False, drop_last=False)
     
-    model = LearnableWatershedWithSDF(num_markers=100, num_iterations=50).to(device)
+    model = LearnableWatershedWithRNN(num_markers=50, num_iterations=15).to(device)
     summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
 
     optimizer = AdamW(model.parameters(), betas=[args.beta_1, args.beta_2], lr=args.lr, weight_decay=args.weight_decay)
     loss_criterion = nn.CrossEntropyLoss()
     
     start = time.time()
-    results = train(args, model, train_loader, val_loader, optimizer, loss_criterion, epochs=args.epochs, device=device, model_save_path=output_file_path_best_model)
+    results = train(args, model, train_loader, val_loader, optimizer, loss_criterion, epochs=args.epochs, device=device, model_save_path=None)
     end = time.time()
 
     state_dict = {
