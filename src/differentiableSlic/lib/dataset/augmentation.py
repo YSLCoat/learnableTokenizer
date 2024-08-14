@@ -40,7 +40,7 @@ class RandomScale:
 
 
 class RandomCrop:
-    def __init__(self, crop_size=(200, 200)):
+    def __init__(self, crop_size=(224, 224)):
         self.crop_size = crop_size
 
     def __call__(self, data):
@@ -51,3 +51,4 @@ class RandomCrop:
         top = random.randint(0, height - c_h)
         data = [d[top:top+c_h, left:left+c_w] for d in data]
         return data
+    

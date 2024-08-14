@@ -46,7 +46,7 @@ if __name__ == '__main__':
     parser.add_argument("--beta_2", default=0.999, type=float)
     parser.add_argument("--weight_decay", default=1e-2, type=float)
     parser.add_argument("--batch_size", default=64, type=int)
-    parser.add_argument("--epochs", default=50, type=int)
+    parser.add_argument("--epochs", default=500, type=int)
     parser.add_argument("--save_every", default=1, type=int)
     
     parser.add_argument("--model_name", default = 'vit_base_patch16_224', type=str, help="Insert vit_small, vit_base, vit_large or vit_huge for presets. Enter a custom name if using custom parameters.")

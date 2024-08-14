@@ -6,6 +6,9 @@ import time
 from datetime import timedelta
 import math
 
+mean = torch.tensor([0.485, 0.456, 0.406]).to("cuda")
+std = torch.tensor([0.229, 0.224, 0.225]).to("cuda")
+
 def train_step(model: torch.nn.Module, 
                dataloader: torch.utils.data.DataLoader, 
                loss_fn: torch.nn.Module, 
@@ -40,9 +43,10 @@ def train_step(model: torch.nn.Module,
     for X, y in tqdm(dataloader):
         # Send data to target device
         X, y = X.to(device), y.to(device)
-
+        X = (X - mean[None, :, None, None]) / std[None, :, None, None]
         # 1. Forward pass
-        y_pred = model(X)
+
+        y_pred = model(X).reshape(y.shape[0], 50, 50176).float()
 
         # 2. Calculate  and accumulate loss
         loss = loss_fn(y_pred, y)
@@ -58,8 +62,8 @@ def train_step(model: torch.nn.Module,
         optimizer.step()
 
         # Calculate and accumulate accuracy metric across all batches
-        y_pred_class = torch.argmax(torch.softmax(y_pred, dim=1), dim=1)
-        train_acc += (y_pred_class == y).sum().item()/len(y_pred)
+        # y_pred_class = torch.argmax(torch.softmax(y_pred, dim=1), dim=1)
+        # train_acc += (y_pred_class == y).sum().item()/len(y_pred)
 
     # Adjust metrics to get average loss and accuracy per batch 
     train_loss = train_loss / len(dataloader)
@@ -98,18 +102,19 @@ def val_step(model: torch.nn.Module,
         # Loop through DataLoader batches
         for X, y in tqdm(dataloader):
             # Send data to target device
-            X, y = X.to(device), y.to(device)
+            X, y = X.to(device), y.to(device) 
+            X = (X - mean[None, :, None, None]) / std[None, :, None, None]
 
             # 1. Forward pass
-            val_pred_logits = model(X)
+            val_pred_logits = model(X).reshape(y.shape[0], 50, 50176).float()
 
             # 2. Calculate and accumulate loss
             loss = loss_fn(val_pred_logits, y)
             val_loss += loss.item()
 
             # Calculate and accumulate accuracy
-            val_pred_labels = val_pred_logits.argmax(dim=1)
-            val_acc += ((val_pred_labels == y).sum().item()/len(val_pred_labels))
+            # val_pred_labels = val_pred_logits.argmax(dim=1)
+            # val_acc += ((val_pred_labels == y).sum().item()/len(val_pred_labels))
 
     # Adjust metrics to get average loss and accuracy per batch 
     val_loss = val_loss / len(dataloader)
@@ -121,7 +126,6 @@ def train(args,
           train_dataloader: torch.utils.data.DataLoader, 
           val_dataloader: torch.utils.data.DataLoader, 
           optimizer: torch.optim.Optimizer,
-          scheduler: torch.optim.lr_scheduler._LRScheduler,
           loss_fn: torch.nn.Module,
           epochs: int,
           device: torch.device,
@@ -168,7 +172,6 @@ def train(args,
 
     # Loop through training and valing steps for a number of epochs
     for epoch in tqdm(range(epochs)):
-        #scheduler.step()
         start = time.time()
         train_loss, train_acc = train_step(model=model,
                                             dataloader=train_dataloader,
@@ -195,10 +198,10 @@ def train(args,
         results["val_loss"].append(val_loss)
         results["val_acc"].append(val_acc)
         
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            torch.save(model.state_dict(), model_save_path)
-            print(f"Model saved with val loss: {best_val_loss:.4f}.")
+        # if val_loss < best_val_loss:
+        #     best_val_loss = val_loss
+        #     torch.save(model.state_dict(), model_save_path)
+        #     print(f"Model saved with val loss: {best_val_loss:.4f}.")
             
         end = time.time()
         if epoch==0:

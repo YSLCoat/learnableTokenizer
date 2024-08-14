@@ -30,8 +30,8 @@ if __name__ == '__main__':
     parser.add_argument("--beta_1", default=0.9, type=float)
     parser.add_argument("--beta_2", default=0.999, type=float)
     parser.add_argument("--weight_decay", default=1e-2, type=float)
-    parser.add_argument("--batch_size", default=128, type=int)
-    parser.add_argument("--epochs", default=50, type=int)
+    parser.add_argument("--batch_size", default=32, type=int)
+    parser.add_argument("--epochs", default=500, type=int)
     
     parser.add_argument("--n_classes", type=int, required=True)
     parser.add_argument("--n_channels", default=3, type=int)
@@ -45,10 +45,10 @@ if __name__ == '__main__':
     train_dataset = BSDS(args.data_subfolder_path, geo_transforms=augment)
     train_loader = torch.utils.data.DataLoader(train_dataset, args.batch_size, shuffle=True, drop_last=True, num_workers=0)
 
-    test_dataset = BSDS(args.data_subfolder_path, split="val")
+    test_dataset = BSDS(args.data_subfolder_path, split="val", geo_transforms=augment)
     val_loader = torch.utils.data.DataLoader(test_dataset, args.batch_size, shuffle=False, drop_last=False)
     
-    model = LearnableWatershedWithRNN(num_markers=50, num_iterations=15).to(device)
+    model = LearnableWatershedWithRNN(num_markers=50, num_iterations=5).to(device)
     summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
 
     optimizer = AdamW(model.parameters(), betas=[args.beta_1, args.beta_2], lr=args.lr, weight_decay=args.weight_decay)
