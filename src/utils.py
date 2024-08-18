@@ -5,6 +5,8 @@ import plotly.graph_objects as go
 import time
 from datetime import timedelta
 import math
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 mean = torch.tensor([0.485, 0.456, 0.406]).to("cuda")
 std = torch.tensor([0.229, 0.224, 0.225]).to("cuda")
@@ -45,7 +47,17 @@ def train_step(model: torch.nn.Module,
         X, y = X.to(device), y.to(device)
         X = (X - mean[None, :, None, None]) / std[None, :, None, None]
         # 1. Forward pass
+        markers = model(X)
+        cmap = mpl.colors.ListedColormap(torch.rand(256**2,3).numpy())
+        # Plot argmax
+        fig, ax = plt.subplots(4,4,figsize=(16,16))
+        for i, a in enumerate(ax.flatten()):
+            a.matshow(markers.argmax(-1).view(16,224,224)[i].cpu(), cmap=cmap)
+            a.axis('off')
 
+        plt.tight_layout()
+        plt.show()
+                
         y_pred = model(X).reshape(y.shape[0], 50, 50176).float()
 
         # 2. Calculate  and accumulate loss

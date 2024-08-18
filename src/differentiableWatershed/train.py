@@ -12,11 +12,13 @@ import sys
 sys.path.append(r'D:\MSc_Data_Science_UiO\Thesis\learnableTokenizer\src')
 from torchvision import transforms
 from torch.optim import AdamW
-from differentiableWatershed.model import LearnableWatershedWithRNN
+from differentiableWatershed.model import DifferentiableWatershedWithVoronoi
 from torchinfo import summary
 from differentiableSlic.lib.dataset.bsds import BSDS
 from differentiableSlic.lib.dataset import augmentation
 from utils import train, plot, calculate_warmup_epochs
+import segmentation_models_pytorch as smp
+
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -30,7 +32,7 @@ if __name__ == '__main__':
     parser.add_argument("--beta_1", default=0.9, type=float)
     parser.add_argument("--beta_2", default=0.999, type=float)
     parser.add_argument("--weight_decay", default=1e-2, type=float)
-    parser.add_argument("--batch_size", default=32, type=int)
+    parser.add_argument("--batch_size", default=16, type=int)
     parser.add_argument("--epochs", default=500, type=int)
     
     parser.add_argument("--n_classes", type=int, required=True)
@@ -48,8 +50,10 @@ if __name__ == '__main__':
     test_dataset = BSDS(args.data_subfolder_path, split="val", geo_transforms=augment)
     val_loader = torch.utils.data.DataLoader(test_dataset, args.batch_size, shuffle=False, drop_last=False)
     
-    model = LearnableWatershedWithRNN(num_markers=50, num_iterations=5).to(device)
-    summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
+    model = DifferentiableWatershedWithVoronoi(num_markers=50, num_iterations=5).to(device)
+    # model = smp.Unet(encoder_name="resnet34", encoder_weights="imagenet", in_channels=3, classes=50).to(device)
+
+    #summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
 
     optimizer = AdamW(model.parameters(), betas=[args.beta_1, args.beta_2], lr=args.lr, weight_decay=args.weight_decay)
     loss_criterion = nn.CrossEntropyLoss()

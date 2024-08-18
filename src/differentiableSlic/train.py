@@ -5,8 +5,11 @@ import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
+
+import sys
+sys.path.append(r'D:\MSc_Data_Science_UiO\Thesis\learnableTokenizer\src')
 from lib.utils.meter import Meter
-from .model import SSNModel
+from differentiableSlic.model import SSNModel
 from lib.dataset import bsds, augmentation
 from lib.utils.loss import reconstruct_loss_with_cross_etnropy, reconstruct_loss_with_mse
 

@@ -1,106 +1,147 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision.transforms as transforms
-from torch_geometric.nn import GCNConv
+from torchvision import transforms
+from scipy.ndimage import distance_transform_edt
+from skimage.segmentation import find_boundaries
 
-import torch
-from torch_geometric.data import Data
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-class FloodingRNN(nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels, num_iterations):
-        super(FloodingRNN, self).__init__()
-        self.num_iterations = num_iterations
-        self.rnn = nn.GRU(in_channels, hidden_channels, batch_first=True)
-        self.output_layer = nn.Conv2d(hidden_channels, out_channels, kernel_size=1)
+class VoronoiPropagation(nn.Module):
+    def __init__(self, num_clusters=50, height=224, width=224, learnable_centroids=False):
+        super(VoronoiPropagation, self).__init__()
+        self.num_clusters = num_clusters
+        self.height = height
+        self.width = width
+        self.learnable_centroids = learnable_centroids
+        
+        if learnable_centroids:
+            self.sy = nn.Parameter(torch.rand(1, num_clusters))  # Learnable y coordinates of centroids
+            self.sx = nn.Parameter(torch.rand(1, num_clusters))  # Learnable x coordinates of centroids
+        else:
+            self.sobel_x = nn.Conv2d(1, 1, kernel_size=3, padding=1, bias=False)
+            self.sobel_y = nn.Conv2d(1, 1, kernel_size=3, padding=1, bias=False)
+            sobel_x_filter = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+            sobel_y_filter = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+            self.sobel_x.weight = nn.Parameter(sobel_x_filter, requires_grad=False)
+            self.sobel_y.weight = nn.Parameter(sobel_y_filter, requires_grad=False)
+        
+        # Set bandwidth / sigma for kernel (learnable)
+        self.std = nn.Parameter(torch.tensor(num_clusters / (height * width) ** 0.5))
     
     def forward(self, x):
-        batch_size, channels, h, w = x.shape
-        x = x.view(batch_size, h * w, channels) 
-        h_t = None  
-        for _ in range(self.num_iterations):
-            x, h_t = self.rnn(x, h_t)  
-            x = F.relu(x)
+        batch_size = x.shape[0]
         
-        x = x.view(batch_size, h, w, -1).permute(0, 3, 1, 2)  # Reshape back to (batch_size, channels, h, w)
-        x = self.output_layer(x)
-        return x
+        if self.learnable_centroids:
+            # Use fixed learnable centroids
+            sy = self.sy
+            sx = self.sx
+        else:
+            # Compute gradients using Sobel filters
+            Gx = self.sobel_x(x)  # Gradient in x direction
+            Gy = self.sobel_y(x)  # Gradient in y direction
+            gradient_magnitude = torch.sqrt(Gx ** 2 + Gy ** 2)
+            
+            # Invert the gradient magnitude to highlight low-gradient regions
+            inverted_gradient = 1.0 - gradient_magnitude
+            
+            # Downsample the gradient to approximate centroid positions
+            downsampled = F.adaptive_avg_pool2d(inverted_gradient, (self.num_clusters, self.num_clusters))
+            
+            # Flatten downsampled tensor and use topk to find the top `num_clusters` values for each image
+            downsampled_flat = downsampled.view(batch_size, -1)
+            topk_vals, topk_indices = torch.topk(downsampled_flat, self.num_clusters, dim=1)
+            
+            # Convert the 1D indices to 2D coordinates (row, col) in the downsampled space
+            sy = topk_indices // self.num_clusters
+            sx = topk_indices % self.num_clusters
+            
+            # Normalize the coordinates (sy, sx) to the [0, 1] range
+            sy = sy.float() / (self.num_clusters - 1)
+            sx = sx.float() / (self.num_clusters - 1)
+        
+        # Get the total number of pixels in the batch
+        N = batch_size * self.height * self.width
+        
+        # Create shape tensor
+        shape = torch.tensor([batch_size, self.height, self.width, 1], device=device)[:, None]
+        
+        # Calculate pixel coordinates
+        coefs = shape[1:].flipud().cumprod(dim=0).flipud()
+        byx = torch.div(torch.arange(N, device=device)[None], coefs, rounding_mode='trunc') % shape[:-1]
 
-class LearnableWatershedWithRNN(nn.Module):
+        # Normalize y, x coordinates
+        y = byx[1] / self.height  # Shape: [N]
+        x = byx[2] / self.width   # Shape: [N]
+
+        # Reshape y and x to include the batch dimension for broadcasting
+        y = y.view(batch_size, self.height * self.width, 1)  # Shape: [B, HW, 1]
+        x = x.view(batch_size, self.height * self.width, 1)  # Shape: [B, HW, 1]
+        
+        #assert 0, (y.shape, sy.shape)
+        
+        # Compute L2 distance using the centroids
+        l2 = gauss2d(y - sy, x - sx, self.std)
+        print(l2.shape)
+        # Softmax to get soft Voronoi regions
+       # markers = F.softmax(l2, dim=1).view(batch_size, self.num_clusters, self.height, self.width)
+        
+        return l2.view(-1,50)
+
+def gauss1d(x, std): return x.div(std).pow_(2).neg_().exp_()
+def gauss2d(x, y, std): return (gauss1d(x, std) + gauss1d(y, std)) / 2
+
+
+class DifferentiableWatershedWithVoronoi(nn.Module):
     def __init__(self, num_markers=3, num_iterations=20, rnn_hidden_channels=51):
-        super(LearnableWatershedWithRNN, self).__init__()
+        super(DifferentiableWatershedWithVoronoi, self).__init__()
 
         self.num_markers = num_markers
 
-        # Convolutional layers for edge detection
-        self.edge_conv1 = nn.Conv2d(1, 16, kernel_size=3, padding=1)
-        self.edge_conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.edge_conv3 = nn.Conv2d(32, 1, kernel_size=3, padding=1)  # Output is a single channel for edge detection
+        # Define Sobel kernels
+        self.Kx = torch.tensor([[-1, 0, 1], 
+                        [-2, 0, 2], 
+                        [-1, 0, 1]], dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
+        
+        self.Ky = torch.tensor([[ 1,  2,  1], 
+                        [ 0,  0,  0], 
+                        [-1, -2, -1]], dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
 
         # Convolutional layers for marker prediction
         self.conv1 = nn.Conv2d(1, 16, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
         self.conv3 = nn.Conv2d(32, num_markers, kernel_size=3, padding=1)  # Output channels = num_markers
         
-        self.num_classes = num_markers
         self.grayscale_transform = transforms.Grayscale(num_output_channels=1)  # No need to send to device, done in forward pass
 
-        # RNN for flooding approximation
-        self.rnn_flooding = FloodingRNN(in_channels=51,  # Markers and gradient magnitude
-                                        hidden_channels=rnn_hidden_channels, 
-                                        out_channels=num_markers, 
-                                        num_iterations=num_iterations)
+        # Voronoi propagation module
+        self.voronoi_propagation = VoronoiPropagation(num_clusters=num_markers, height=224, width=224)
+
+        # Optional RNN for flooding approximation (could be used after Voronoi)
+        # self.rnn_flooding = FloodingRNN(in_channels=51,  # Markers and gradient magnitude
+        #                                 hidden_channels=rnn_hidden_channels, 
+        #                                 out_channels=num_markers, 
+        #                                 num_iterations=num_iterations)
         
     def forward(self, image):
         if image.shape[1] == 3:  
             image = self.grayscale_transform(image)
 
-        # Edge detection using separate convolutional layers
-        edge_x = F.relu(self.edge_conv1(image))
-        edge_x = F.relu(self.edge_conv2(edge_x))
-        G = torch.sigmoid(self.edge_conv3(edge_x))  # Use sigmoid to get values in range [0, 1] for gradient magnitude
+        # Convolve the image with the Sobel kernels
+        Gx = F.conv2d(image, self.Kx, padding=1)
+        Gy = F.conv2d(image, self.Ky, padding=1)
         
-        G = F.normalize(G, p=2, dim=(-2, -1), eps=1e-7)
+        # Calculate the gradient magnitude
+        G = torch.hypot(Gx, Gy)
+        G = torch.sigmoid(G)
 
-        # Generate markers using the learnable marker generator
-        x = F.relu(self.conv1(image))
-        x = F.relu(self.conv2(x))
-        x = self.conv3(x)
-
-        x = F.softmax(x, dim=1)
+        # Generate markers using Voronoi propagation
+        markers = self.voronoi_propagation(image)
         
-        # def gumbel_softmax(logits, tau=1.0, hard=False):
-        #     gumbels = -torch.empty_like(logits).exponential_().log()  # ~Gumbel(0,1)
-        #     gumbels = (logits + gumbels) / tau  # logits + gumbels for sampling
-        #     y_soft = gumbels.softmax(dim=1)
-
-        #     if hard:
-        #         # Straight-through trick for discrete sampling
-        #         index = y_soft.max(dim=1, keepdim=True)[1]
-        #         y_hard = torch.zeros_like(logits).scatter_(1, index, 1.0)
-        #         return (y_hard - y_soft).detach() + y_soft
-        #     else:
-        #         return y_soft
-
-        # # Apply Gumbel-Softmax to the output of the CNN
-        # x = gumbel_softmax(x, tau=1.0, hard=True)  # Now x contains differentiable approximations to one-hot encoded markers
-        # assert 0, x.shape
-        # Pass to the RNN
-        
-        
-        _, markers = torch.max(x, dim=1, keepdim=True)
-        # markers = torch.argmax(x, dim=1, keepdim=True)
-        # Prepare input for RNN (concatenate markers and gradient)
-        rnn_input = torch.cat([x, G], dim=1).to(device)
-        
-        
-        
-        segmentation = self.rnn_flooding(rnn_input)   
-        
-        return segmentation
-    
-    
+        # Optionally: concatenate markers and gradient, pass to RNN for further refinement
+        # rnn_input = torch.cat([markers, G], dim=1)
+        # segmentation = self.rnn_flooding(rnn_input)
+        return markers
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
