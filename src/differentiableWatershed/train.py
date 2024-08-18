@@ -43,7 +43,7 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
 
-    augment = augmentation.Compose([augmentation.RandomHorizontalFlip(), augmentation.RandomScale(), augmentation.RandomCrop()])
+    augment = augmentation.Compose([augmentation.RandomHorizontalFlip(), augmentation.RandomCrop()])
     train_dataset = BSDS(args.data_subfolder_path, geo_transforms=augment)
     train_loader = torch.utils.data.DataLoader(train_dataset, args.batch_size, shuffle=True, drop_last=True, num_workers=0)
 

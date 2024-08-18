@@ -16,8 +16,8 @@ class VoronoiPropagation(nn.Module):
         self.learnable_centroids = learnable_centroids
         
         if learnable_centroids:
-            self.sy = nn.Parameter(torch.rand(1, num_clusters))  # Learnable y coordinates of centroids
-            self.sx = nn.Parameter(torch.rand(1, num_clusters))  # Learnable x coordinates of centroids
+            self.sy = nn.Parameter(torch.rand(1, num_clusters))
+            self.sx = nn.Parameter(torch.rand(1, num_clusters))  
         else:
             self.sobel_x = nn.Conv2d(1, 1, kernel_size=3, padding=1, bias=False)
             self.sobel_y = nn.Conv2d(1, 1, kernel_size=3, padding=1, bias=False)
@@ -81,7 +81,7 @@ class VoronoiPropagation(nn.Module):
         #assert 0, (y.shape, sy.shape)
         
         # Compute L2 distance using the centroids
-        l2 = gauss2d(y - sy, x - sx, self.std)
+        l2 = gauss2d(y - sy.unsqueeze(1), x - sx.unsqueeze(1), self.std)
         print(l2.shape)
         # Softmax to get soft Voronoi regions
        # markers = F.softmax(l2, dim=1).view(batch_size, self.num_clusters, self.height, self.width)
@@ -138,7 +138,6 @@ class DifferentiableWatershedWithVoronoi(nn.Module):
         # Generate markers using Voronoi propagation
         markers = self.voronoi_propagation(image)
         
-        # Optionally: concatenate markers and gradient, pass to RNN for further refinement
         # rnn_input = torch.cat([markers, G], dim=1)
         # segmentation = self.rnn_flooding(rnn_input)
         return markers

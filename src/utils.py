@@ -45,10 +45,18 @@ def train_step(model: torch.nn.Module,
     for X, y in tqdm(dataloader):
         # Send data to target device
         X, y = X.to(device), y.to(device)
+        cmap = mpl.colors.ListedColormap(torch.rand(256**2,3).numpy())
+        fig, ax = plt.subplots(4,4,figsize=(16,16))
+        for i, a in enumerate(ax.flatten()):
+            a.matshow(X[i].permute(1,2,0).cpu())
+            a.axis('off')
+
+        plt.tight_layout()
+        plt.show()
         X = (X - mean[None, :, None, None]) / std[None, :, None, None]
         # 1. Forward pass
         markers = model(X)
-        cmap = mpl.colors.ListedColormap(torch.rand(256**2,3).numpy())
+        
         # Plot argmax
         fig, ax = plt.subplots(4,4,figsize=(16,16))
         for i, a in enumerate(ax.flatten()):
