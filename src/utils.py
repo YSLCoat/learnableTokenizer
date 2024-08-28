@@ -7,6 +7,8 @@ from datetime import timedelta
 import math
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import torch.nn as nn
+import os
 
 mean = torch.tensor([0.485, 0.456, 0.406]).to("cuda")
 std = torch.tensor([0.229, 0.224, 0.225]).to("cuda")
@@ -40,33 +42,18 @@ def train_step(model: torch.nn.Module,
 
     # Setup train loss and train accuracy values
     train_loss, train_acc = 0, 0
+    total_pixels = 0
+    correct_pixels = 0
 
     # Loop through data loader data batches
     for X, y in tqdm(dataloader):
         # Send data to target device
         X, y = X.to(device), y.to(device)
-        cmap = mpl.colors.ListedColormap(torch.rand(256**2,3).numpy())
-        fig, ax = plt.subplots(4,4,figsize=(16,16))
-        for i, a in enumerate(ax.flatten()):
-            a.matshow(X[i].permute(1,2,0).cpu())
-            a.axis('off')
-
-        plt.tight_layout()
-        plt.show()
         X = (X - mean[None, :, None, None]) / std[None, :, None, None]
         # 1. Forward pass
         markers = model(X)
-        
-        # Plot argmax
-        fig, ax = plt.subplots(4,4,figsize=(16,16))
-        for i, a in enumerate(ax.flatten()):
-            a.matshow(markers.argmax(-1).view(16,224,224)[i].cpu(), cmap=cmap)
-            a.axis('off')
 
-        plt.tight_layout()
-        plt.show()
-                
-        y_pred = model(X).reshape(y.shape[0], 50, 50176).float()
+        y_pred = markers.reshape(y.shape[0], y.shape[1], X.shape[2]*X.shape[3]).float()
 
         # 2. Calculate  and accumulate loss
         loss = loss_fn(y_pred, y)
@@ -81,13 +68,15 @@ def train_step(model: torch.nn.Module,
         # 5. Optimizer step
         optimizer.step()
 
-        # Calculate and accumulate accuracy metric across all batches
-        # y_pred_class = torch.argmax(torch.softmax(y_pred, dim=1), dim=1)
-        # train_acc += (y_pred_class == y).sum().item()/len(y_pred)
-
+        # 6. Calculate accuracy
+        # Assuming y and y_pred are both (batch_size, channels, height * width)
+        # y_pred_bin = torch.round(y_pred)  # Threshold the predictions to get binary values (0 or 1)
+        # correct_pixels += (y_pred_bin == y).sum().item()
+        # total_pixels += y.numel()
+        
     # Adjust metrics to get average loss and accuracy per batch 
     train_loss = train_loss / len(dataloader)
-    train_acc = train_acc / len(dataloader)
+    train_acc = 0 # correct_pixels / total_pixels 
     return train_loss, train_acc
 
 def val_step(model: torch.nn.Module, 
@@ -232,6 +221,23 @@ def train(args,
     # Return the filled results at the end of the epochs
     return results
 
+class DiceLoss(nn.Module):
+    def __init__(self, smooth=1.0):
+        super(DiceLoss, self).__init__()
+        self.smooth = smooth
+
+    def forward(self, inputs, targets):
+        # Flatten the input and target tensors
+        inputs = inputs.view(-1)
+        targets = targets.view(-1)
+
+        # Calculate intersection and union
+        intersection = (inputs * targets).sum()
+        dice_score = (2. * intersection + self.smooth) / (inputs.sum() + targets.sum() + self.smooth)
+
+        return 1 - dice_score  # Dice loss is 1 - Dice coefficient
+
+
 def plot(results, output_path):
     fig_loss = go.Figure()
     fig_acc = go.Figure()
@@ -284,3 +290,50 @@ def verify_model_name(model_name):
         print("Loading model config for: ", model_name)
     else:
         assert 0, "Model configuration not found in timm."
+        
+        
+def check_accuracy_binary(loader,model,device):
+    num_correct = 0
+    num_pixels = 0
+    dice_score = 0
+    model.eval()
+
+    with torch.no_grad():
+        for x, y in loader:
+            x = x.to(device)
+            y = y.to(device).unsqueeze(1)
+            preds = torch.sigmoid(model(x))
+            preds = (preds > 0.5).float()
+            num_correct += (preds == y).sum()
+            num_pixels += torch.numel(preds)
+            dice_score += (2 * (preds * y).sum()) / ((preds + y).sum() + 1e-8)
+
+    print(
+        f'Got {num_correct}/{num_pixels} with acc {num_correct/num_pixels*100:.2f}'
+    )
+    print(f'Dice score: {dice_score/len(loader)}')
+    model.train()
+    return dice_score/len(loader)
+
+from torchvision.utils import save_image
+
+
+def save_predictions_as_imgs(loader, model, device, folder="saved_images/"):
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    num_examples = 0
+    
+    model.eval()
+    for idx, (x, y) in enumerate(loader):
+        x = x.to(device=device)
+        with torch.no_grad():
+            preds = torch.sigmoid(model(x))
+            preds = (preds > 0.5).float()
+        
+        for i in range(preds.size(0)):  # Iterate over each image in the batch
+            torchvision.utils.save_image(preds[i], os.path.join(folder, f"pred_{idx}_{i}.png"))
+            torchvision.utils.save_image(y[i].unsqueeze(0), os.path.join(folder, f"mask_{idx}_{i}.png"))  # unsqueeze adds a channel dimension to the tensor
+            num_examples += 1
+            if num_examples == 10:
+                model.train()
+                return
