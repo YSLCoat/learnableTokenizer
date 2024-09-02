@@ -6,7 +6,7 @@ from scipy.ndimage import distance_transform_edt
 from skimage.segmentation import find_boundaries
 import segmentation_models_pytorch as smp
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "cpu"#"cuda" if torch.cuda.is_available() else "cpu"
 
 
 class UNet(nn.Module):
@@ -215,7 +215,7 @@ class DifferentiableWatershedWithVoronoi(nn.Module):
         
         # ConvRNN module to approximate JFA
         self.conv_rnn = StackedConvGRU(input_channels=num_markers + 1, hidden_channels=rnn_hidden_channels, num_layers=5)
-        self.unet = smp.Unet(encoder_name="resnet34", encoder_weights="imagenet", in_channels=num_markers+1, classes=num_markers).to(device)
+        self.unet = smp.Unet(encoder_name="resnet34", encoder_weights="imagenet", in_channels=num_markers+4, classes=num_markers).to(device)
         # Final output layer
         self.final_conv = nn.Conv2d(rnn_hidden_channels, num_markers, kernel_size=1)
 
@@ -233,9 +233,9 @@ class DifferentiableWatershedWithVoronoi(nn.Module):
         G = torch.sigmoid(G)
         # Generate markers using Voronoi propagation
         markers = self.voronoi_propagation(image_greyscale_converted)
-        concatenated_input = torch.cat((markers, G), dim=1)
+        concatenated_input = torch.cat((image, markers, G), dim=1)
         # Approximate JFA using ConvRNN
-        refined_markers = self.conv_rnn(concatenated_input)
+        #refined_markers = self.conv_rnn(concatenated_input)
         #concatenated_input = torch.cat((markers, G), dim=1)
         # Final output after JFA approximation
         #output = self.final_conv(refined_markers)

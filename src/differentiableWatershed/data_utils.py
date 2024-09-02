@@ -122,23 +122,18 @@ class BSDS500Dataset(Dataset):
         # Load ground truth segmentation
         gt_name = os.path.join(self.ground_truth_dir, self.image_files[idx].replace('.jpg', '.mat'))
         gt_data = sio.loadmat(gt_name)
-        ground_truth = gt_data['groundTruth']
+        t = np.random.randint(0, len(gt_data['groundTruth'][0]))  # Select random segmentation labels for each image.
+        ground_truth = gt_data['groundTruth'][0][t][0][0][0]
+        segmentation = convert_label(ground_truth)
         
-        # Extract the first segmentation from the nested structure
-        segmentation = ground_truth[0, 0]['Segmentation'][0, 0]
-        
-        # Check if segmentation has the shape (1, 1) and extract the data
-        if isinstance(segmentation, np.ndarray) and segmentation.shape == (1, 1):
-            segmentation = segmentation[0, 0]
+        # Reduce the one-hot encoding to a single channel using argmax
+        segmentation = np.argmax(segmentation, axis=1).squeeze(0)
         
         # Resize the segmentation mask to match the image size
-        segmentation = Image.fromarray(segmentation)
+        segmentation = Image.fromarray(segmentation.astype(np.uint8))
         segmentation = segmentation.resize((224, 224), Image.NEAREST)
         
-        # Convert the segmentation to int64 and ensure it's a 2D array
-        segmentation = np.array(segmentation, dtype=np.int64)
-        
         # Convert segmentation to a torch tensor
-        segmentation = torch.tensor(segmentation, dtype=torch.long)
+        segmentation = torch.tensor(np.array(segmentation), dtype=torch.long)
         
         return image, segmentation

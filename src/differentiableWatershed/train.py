@@ -34,7 +34,7 @@ DATASET_DIR = 'F:\data\Caravana\\'
 WORKING_DIR = 'F:\data\Caravana\extracted\\'
 
 
-def check_accuracy_binary(loader,model,device):
+def check_accuracy_multiclass(loader, model, device, num_classes):
     num_correct = 0
     num_pixels = 0
     dice_score = 0
@@ -43,21 +43,27 @@ def check_accuracy_binary(loader,model,device):
     with torch.no_grad():
         for x, y in loader:
             x = x.to(device)
-            y = y.to(device).unsqueeze(1)
-            preds = torch.sigmoid(model(x))
-            preds = (preds > 0.5).float()
-            num_correct += (preds.unsqueeze(1).view((x.shape[0], 1, 50, 50176)) == y).sum()
+            y = y.to(device)
+            preds = model(x)
+            preds = torch.argmax(preds, dim=1)
+            
+            num_correct += (preds == y).sum().item()
             num_pixels += torch.numel(preds)
-            dice_score += (2 * (preds.unsqueeze(1).view((x.shape[0], 1, 50, 50176)) * y).sum()) / ((preds.unsqueeze(1).view((x.shape[0], 1, 50, 50176)) + y).sum() + 1e-8)
+
+            # Calculate Dice score for each class and average
+            dice = 0
+            for cls in range(num_classes):
+                pred_cls = (preds == cls).float()
+                true_cls = (y == cls).float()
+                dice += (2 * (pred_cls * true_cls).sum()) / ((pred_cls + true_cls).sum() + 1e-8)
+            dice_score += dice / num_classes
 
     print(
-        f'Got {num_correct}/{num_pixels} with acc {num_correct/num_pixels*100:.2f}'
+        f'Got {num_correct}/{num_pixels} with accuracy {num_correct/num_pixels*100:.2f}'
     )
     print(f'Dice score: {dice_score/len(loader)}')
     model.train()
-    return dice_score/len(loader)
-
-from torchvision.utils import save_image
+    return dice_score / len(loader)
 
 
 def save_predictions_as_imgs(loader, model, device, folder="saved_images/"):
@@ -80,7 +86,7 @@ def save_predictions_as_imgs(loader, model, device, folder="saved_images/"):
                 model.train()
                 return
             
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "cpu"#"cuda" if torch.cuda.is_available() else "cpu"
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train model")
@@ -162,17 +168,17 @@ if __name__ == '__main__':
     train_loader = torch.utils.data.DataLoader(train_dataset, args.batch_size, shuffle=True, drop_last=True, num_workers=0)
     
     val_dataset = BSDS500Dataset(root_dir=r'D:\Data\BSDS500\data', split='val', transform=transform)
-    val_loader = torch.utils.data.DataLoader(val_dataset, args.batch_size, shuffle=False, drop_last=False)
+    val_loader = torch.utils.data.DataLoader(val_dataset, args.batch_size, shuffle=False, drop_last=False, num_workers=0)
     
     model = DifferentiableWatershedWithVoronoi(num_markers=args.n_classes, num_iterations=6).to(device)
     # model = smp.Unet(encoder_name="resnet34", encoder_weights="imagenet", in_channels=3, classes=1).to(device)
     scaler = torch.cuda.amp.GradScaler() # this will help us to use mixed precision training
-    summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
+    #summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
 
     optimizer = AdamW(model.parameters(), betas=[args.beta_1, args.beta_2], lr=args.lr, weight_decay=args.weight_decay)
     #loss_criterion = nn.CrossEntropyLoss() #DiceLoss()
     
-    criterion = nn.BCEWithLogitsLoss()
+    criterion = nn.CrossEntropyLoss()
     use_scheduler = False
     if use_scheduler:
         scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=1, eta_min=1e-6, last_epoch=-1)
@@ -197,18 +203,18 @@ if __name__ == '__main__':
         # loop on the train loader
         for batch_idx, (images, masks) in enumerate(tk0):
             images = images.to(device)
-            masks = masks.float().unsqueeze(1).to(device) # add a channel dimension to the mask (since it is a single channel image)
+            masks = masks.float().to(device) # add a channel dimension to the mask (since it is a single channel image)
 
             
-            # we will use Float16 training to speed up the training process
-            with torch.cuda.amp.autocast():
+            #with torch.cuda.amp.autocast():
                 # forward pass
-                preds = model(images)
-                # calculate the loss
-                print(preds.shape, masks.shape)
-                loss = criterion(preds.unsqueeze(1).view((images.shape[0], 1, 4, 50176)), masks.view(images.shape[0], 1, 50176))
-                train_loss += loss.item()
-                train_exapmles += images.size(0)
+            preds = model(images)
+            # calculate the loss
+            #print(preds.shape, masks.shape)
+            #print(torch.unique(masks))
+            loss = criterion(preds, masks.long())
+            train_loss += loss.item()
+            train_exapmles += images.size(0)
             
             
             # backpropagation
@@ -233,13 +239,13 @@ if __name__ == '__main__':
         with torch.no_grad():
             for batch_idx, (images, masks) in enumerate(tk1):
                 images = images.to(device)
-                masks = masks.float().unsqueeze(1).to(device)
+                masks = masks.float().to(device)
 
                 # forward pass
                 preds = model(images)
 
                 # calculate the loss
-                loss = criterion(preds.unsqueeze(1).view((images.shape[0], 1, 50, 50176)), masks)
+                loss = criterion(preds, masks.long())
                 val_loss += loss.item()
                 val_examples += images.size(0)
 
@@ -247,7 +253,7 @@ if __name__ == '__main__':
                 tk1.set_postfix(loss=(val_loss/val_examples))
 
         # save the model if the accuracy is improved
-        accuracy = check_accuracy_binary(val_loader, model, device)
+        accuracy = check_accuracy_multiclass(val_loader, model, device, args.n_classes)
         # if accuracy > best_accuracy:
         #     best_accuracy = accuracy
         #     checkpoint = {
