@@ -15,7 +15,7 @@ import models
 import datasets
 from loss import compute_semantic_pos_loss
 import datetime
-from tensorboardX import SummaryWriter
+#from tensorboardX import SummaryWriter
 from train_util import *
 
 '''

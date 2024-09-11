@@ -14,80 +14,79 @@ from torchvision import transforms
 from torch.optim import AdamW
 from differentiableWatershed.model import DifferentiableWatershedWithVoronoi
 from torchinfo import summary
-from differentiableSlic.lib.dataset.bsds import BSDS
 from differentiableSlic.lib.dataset import augmentation
 from utils import train, plot, calculate_warmup_epochs, DiceLoss
 import segmentation_models_pytorch as smp
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader
-from data_utils import BSDS500Dataset
+from data_utils import BSDS
+from loss_functions import combined_loss
+import matplotlib.pyplot as plt
+ 
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
-
-import os
-print(os.listdir("F:\data\Caravana"))
-
-import zipfile
-import shutil
-
-DATASET_DIR = 'F:\data\Caravana\\'
-WORKING_DIR = 'F:\data\Caravana\extracted\\'
-
-
-def check_accuracy_multiclass(loader, model, device, num_classes):
-    num_correct = 0
-    num_pixels = 0
-    dice_score = 0
-    model.eval()
-
-    with torch.no_grad():
-        for x, y in loader:
-            x = x.to(device)
-            y = y.to(device)
-            preds = model(x)
-            preds = torch.argmax(preds, dim=1)
-            
-            num_correct += (preds == y).sum().item()
-            num_pixels += torch.numel(preds)
-
-            # Calculate Dice score for each class and average
-            dice = 0
-            for cls in range(num_classes):
-                pred_cls = (preds == cls).float()
-                true_cls = (y == cls).float()
-                dice += (2 * (pred_cls * true_cls).sum()) / ((pred_cls + true_cls).sum() + 1e-8)
-            dice_score += dice / num_classes
-
-    print(
-        f'Got {num_correct}/{num_pixels} with accuracy {num_correct/num_pixels*100:.2f}'
-    )
-    print(f'Dice score: {dice_score/len(loader)}')
-    model.train()
-    return dice_score / len(loader)
-
-
-def save_predictions_as_imgs(loader, model, device, folder="saved_images/"):
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-    num_examples = 0
+def plot_predicted_segments(input_image, predictions, masks=None, num_classes=50):
+    """
+    Plot input image, predicted segments, and ground truth masks for the model.
     
-    model.eval()
-    for idx, (x, y) in enumerate(loader):
-        x = x.to(device=device)
-        with torch.no_grad():
-            preds = torch.sigmoid(model(x))
-            preds = (preds > 0.5).float()
+    Args:
+        input_image: torch.Tensor
+            A Tensor of shape (batch_size, 3, height, width) for RGB input images.
+        predictions: torch.Tensor
+            A Tensor of shape (batch_size, 50, height, width). These are the raw model predictions.
+        masks: torch.Tensor, optional
+            Ground truth mask of shape (batch_size, 50, height, width) or (batch_size, height, width).
+            If masks have multiple channels, they should be one-hot encoded, and we use argmax to convert them.
+        num_classes: int
+            The number of classes predicted by the model (default: 50).
+    """
+    # Get the predicted class for each pixel (argmax over the 50 classes)
+    predicted_classes = torch.argmax(predictions, dim=1)  # Shape: (batch_size, height, width)
+    
+    # Converting to numpy for visualization
+    predicted_classes_np = predicted_classes.cpu().detach().numpy()
+    
+    # Convert input image to numpy (assuming it's in range [0, 1] or [0, 255])
+    input_image_np = input_image.cpu().detach().numpy()  # Shape: (batch_size, height, width, 3)
+    
+    # Plot the input image, predictions, and ground truth masks (if provided)
+    batch_size = input_image_np.shape[0]
+    for i in range(batch_size):
+        plt.figure(figsize=(15, 5))
         
-        for i in range(preds.size(0)):  # Iterate over each image in the batch
-            torchvision.utils.save_image(preds[i], os.path.join(folder, f"pred_{idx}_{i}.png"))
-            torchvision.utils.save_image(y[i].unsqueeze(0), os.path.join(folder, f"mask_{idx}_{i}.png"))  # unsqueeze adds a channel dimension to the tensor
-            num_examples += 1
-            if num_examples == 10:
-                model.train()
-                return
+        # Plot input image
+        plt.subplot(1, 3, 1)
+        plt.imshow(input_image_np[i])  # Ensure the image is in (height, width, 3) format
+        plt.title(f'Input Image (Sample {i+1})')
+        plt.axis('off')
+        
+        # Plot predicted segments
+        plt.subplot(1, 3, 2)
+        plt.imshow(predicted_classes_np[i], cmap='tab20', interpolation='none')
+        plt.title(f'Predicted Segments (Sample {i+1})')
+        plt.axis('off')
+        
+        # If ground truth mask is provided, plot the ground truth alongside
+        if masks is not None:
+            # Remove the extra batch dimension if necessary (squeeze)
+            mask_sample = masks[i].squeeze(0)  # Remove batch dimension
             
-device = "cpu"#"cuda" if torch.cuda.is_available() else "cpu"
+            # Check if masks have multiple channels (e.g., (50, height, width))
+            if mask_sample.shape[0] == num_classes:
+                # Convert ground truth mask from multi-channel (50, height, width) to class index per pixel
+                ground_truth_mask = torch.argmax(mask_sample, dim=0).cpu().detach().numpy()  # Shape: (height, width)
+            else:
+                # If ground truth mask is already single-channel (class indices), use it directly
+                ground_truth_mask = mask_sample.cpu().detach().numpy()  # Shape: (height, width)
 
+            plt.subplot(1, 3, 3)
+            plt.imshow(ground_truth_mask, cmap='tab20', interpolation='none')
+            plt.title(f'Ground Truth Mask (Sample {i+1})')
+            plt.axis('off')
+                
+        plt.show()
+                
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train model")
     parser.add_argument("--data_subfolder_path", default=r"F:\data")
@@ -103,94 +102,25 @@ if __name__ == '__main__':
     parser.add_argument("--n_classes", type=int, required=True)
     parser.add_argument("--n_channels", default=3, type=int)
     parser.add_argument("--img_size", default=224, type=int)
-    parser.add_argument("--patch_size", default=16, type=int)
 
     
     args = parser.parse_args()
     
-    import albumentations as A
-    from albumentations.pytorch import ToTensorV2
+    augment = augmentation.Compose([augmentation.RandomHorizontalFlip(), augmentation.RandomScale(), augmentation.RandomCrop()])
+    train_dataset = BSDS(r'D:\Data', geo_transforms=augment)
+    train_loader = DataLoader(train_dataset, 12, shuffle=True, drop_last=True, num_workers=0)
 
-    train_image_dir = r'F:\data\Caravana\extracted\train'
-    train_mask_dir = r'F:\data\Caravana\extracted\train_masks'
-    val_image_dir = r'F:\data\Caravana\extracted\val'
-    val_mask_dir = r'F:\data\Caravana\extracted\val_masks'
-    ## Dataset hyperparameters
-    batch_size = 16
-    image_height = 224
-    image_width = 224
-    pin_memory = True
-
-    train_transform = A.Compose(
-        [
-            A.Resize(height=image_height, width=image_width),
-            A.Rotate(limit=35, p=1.0),
-            A.HorizontalFlip(p=0.5),
-            A.VerticalFlip(p=0.1),
-            # this will only divide by 255 (since mean = 0 and std = 1)
-            A.Normalize(
-                mean=[0.0, 0.0, 0.0],
-                std=[1.0, 1.0, 1.0],
-                max_pixel_value=255.0,
-            ),
-            ToTensorV2(),
-        ],
-    )
-
-    # for the validation transforms, we will only resize and normalize without any augmentations
-    val_transform = A.Compose(
-        [
-            A.Resize(height=image_height, width=image_width),
-            A.Normalize(
-                mean=[0.0, 0.0, 0.0],
-                std=[1.0, 1.0, 1.0],
-                max_pixel_value=255.0,
-            ),
-            ToTensorV2(),
-        ],
-    )
-
-    # from data_utils import CarvanaDataset
-    
-    # train_dataset = CarvanaDataset(image_dir=train_image_dir,mask_dir=train_mask_dir, transform=train_transform)
-    # val_dataset = CarvanaDataset(image_dir=val_image_dir,mask_dir=val_mask_dir, transform=val_transform)
-    
-    # train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=pin_memory)
-    # val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, pin_memory=pin_memory)
-    
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),  # Resize images to 256x256
-        transforms.ToTensor(),  # Convert images to PyTorch tensors
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Normalize with ImageNet mean and std
-    ])
-    
-    train_dataset = BSDS500Dataset(root_dir=r'D:\Data\BSDS500\data', split='train', transform=transform)
-    train_loader = torch.utils.data.DataLoader(train_dataset, args.batch_size, shuffle=True, drop_last=True, num_workers=0)
-    
-    val_dataset = BSDS500Dataset(root_dir=r'D:\Data\BSDS500\data', split='val', transform=transform)
-    val_loader = torch.utils.data.DataLoader(val_dataset, args.batch_size, shuffle=False, drop_last=False, num_workers=0)
+    test_dataset = BSDS(r'D:\Data', split="val")
+    test_loader = DataLoader(test_dataset, 12, shuffle=False, drop_last=False)
     
     model = DifferentiableWatershedWithVoronoi(num_markers=args.n_classes, num_iterations=6).to(device)
-    # model = smp.Unet(encoder_name="resnet34", encoder_weights="imagenet", in_channels=3, classes=1).to(device)
-    scaler = torch.cuda.amp.GradScaler() # this will help us to use mixed precision training
+    #model = smp.Unet(encoder_name="resnet34", encoder_weights="imagenet", in_channels=3, classes=args.n_classes).to(device)
+    # scaler = torch.cuda.amp.GradScaler() # this will help us to use mixed precision training
     #summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
 
     optimizer = AdamW(model.parameters(), betas=[args.beta_1, args.beta_2], lr=args.lr, weight_decay=args.weight_decay)
-    #loss_criterion = nn.CrossEntropyLoss() #DiceLoss()
     
-    criterion = nn.CrossEntropyLoss()
-    use_scheduler = False
-    if use_scheduler:
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=1, eta_min=1e-6, last_epoch=-1)
-    # start = time.time()
-    # #results = train(args, model, train_loader, val_loader, optimizer, loss_criterion, epochs=args.epochs, device=device, model_save_path=None)
-    # end = time.time()
-
-    # state_dict = {
-    #     'model': model.state_dict(),
-    #     'training_args': args,
-    #     'training_time': end - start,
-    # }
+    train_loss_list = []
     
     for epoch in range(args.epochs):
         ## Training phase 
@@ -201,18 +131,17 @@ if __name__ == '__main__':
         train_exapmles = 0
 
         # loop on the train loader
-        for batch_idx, (images, masks) in enumerate(tk0):
+        for batch_idx, (images_raw, images, masks) in enumerate(tk0):
+            images_raw = images_raw.to(device)
             images = images.to(device)
-            masks = masks.float().to(device) # add a channel dimension to the mask (since it is a single channel image)
+            masks = masks.to(device) # add a channel dimension to the mask (since it is a single channel image)
+            height, width = images.shape[-2:]
 
-            
-            #with torch.cuda.amp.autocast():
-                # forward pass
             preds = model(images)
-            # calculate the loss
-            #print(preds.shape, masks.shape)
-            #print(torch.unique(masks))
-            loss = criterion(preds, masks.long())
+            loss = combined_loss(preds, masks)
+            
+            # print(loss)
+
             train_loss += loss.item()
             train_exapmles += images.size(0)
             
@@ -228,32 +157,43 @@ if __name__ == '__main__':
 
             # update the progress bar
             tk0.set_postfix(loss=(train_loss/train_exapmles))
+            
+            if epoch == 500:
+                model.eval()
+                with torch.no_grad():
+                    predictions = model(images)
+
+                # Visualize predictions and masks
+                plot_predicted_segments(images_raw, predictions, masks=masks)
 
         ## Validation phase
         model.eval()
-        tk1 = tqdm(val_loader, total=len(val_loader), desc=f"Epoch {epoch+1} Validation")
+        tk1 = tqdm(test_loader, total=len(test_loader), desc=f"Epoch {epoch+1} Validation")
 
-        val_loss = 0
-        val_examples = 0
+        val_loss = 1
+        val_examples = 1
 
-        with torch.no_grad():
-            for batch_idx, (images, masks) in enumerate(tk1):
-                images = images.to(device)
-                masks = masks.float().to(device)
+        # with torch.no_grad():
+        #     for batch_idx, (images, masks) in enumerate(tk1):
+        #         images = images.to(device)
+        #         masks = masks.to(device)
 
-                # forward pass
-                preds = model(images)
+        #         preds = model(images)
+            
+        #         # calculate the loss
+        #         #print(preds.shape, masks.shape)
+        #         #print(torch.unique(masks))
+                
+        #         loss = combined_loss(preds, masks).float()
+                
+        #         val_loss += loss.item()
+        #         val_examples += images.size(0)
 
-                # calculate the loss
-                loss = criterion(preds, masks.long())
-                val_loss += loss.item()
-                val_examples += images.size(0)
+        #         # update the progress bar
+        #         tk1.set_postfix(loss=(val_loss/val_examples))
 
-                # update the progress bar
-                tk1.set_postfix(loss=(val_loss/val_examples))
-
-        # save the model if the accuracy is improved
-        accuracy = check_accuracy_multiclass(val_loader, model, device, args.n_classes)
+        # # save the model if the accuracy is improved
+        # accuracy = check_accuracy_multiclass(test_loader, model, device, args.n_classes)
         # if accuracy > best_accuracy:
         #     best_accuracy = accuracy
         #     checkpoint = {
@@ -262,6 +202,8 @@ if __name__ == '__main__':
         #         "best_accuracy": best_accuracy,
         #     }
         #     torch.save(checkpoint, "model.pth")
+        
+        accuracy = 0
 
         print(f"Epoch {epoch+1}, train loss: {train_loss/train_exapmles}, val loss: {val_loss/val_examples}, val accuracy: {accuracy}")
 
@@ -269,6 +211,8 @@ if __name__ == '__main__':
         if epoch % 5 == 0:
             pass#save_predictions_as_imgs(val_loader, model, device, folder="saved_images/")
         
-        if use_scheduler:
-            scheduler.step() 
-
+        train_loss_list.append(train_loss/train_exapmles)
+        
+    plt.plot(train_loss_list)
+    plt.show()
+    

@@ -53,7 +53,6 @@ class BSDS:
         gt = torch.from_numpy(gt)
         img = torch.from_numpy(img)
         img = img.permute(2, 0, 1)
-
         return img, gt.reshape(50, -1).float()
 
 
