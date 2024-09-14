@@ -1,8 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision.transforms as transforms
+from torchvision import transforms
+from scipy.ndimage import distance_transform_edt
+from skimage.segmentation import find_boundaries
 import segmentation_models_pytorch as smp
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+    
 
 class VoronoiPropagation(nn.Module):
     def __init__(self, num_clusters=50, height=224, width=224, learnable_centroids=False):
@@ -16,7 +21,6 @@ class VoronoiPropagation(nn.Module):
             self.sy = nn.Parameter(torch.rand(1, num_clusters))
             self.sx = nn.Parameter(torch.rand(1, num_clusters))  
         else:
-            # Sobel filters for gradient computation
             self.sobel_x = nn.Conv2d(1, 1, kernel_size=3, padding=1, bias=False)
             self.sobel_y = nn.Conv2d(1, 1, kernel_size=3, padding=1, bias=False)
             sobel_x_filter = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32).unsqueeze(0).unsqueeze(0)
@@ -24,24 +28,20 @@ class VoronoiPropagation(nn.Module):
             self.sobel_x.weight = nn.Parameter(sobel_x_filter, requires_grad=False)
             self.sobel_y.weight = nn.Parameter(sobel_y_filter, requires_grad=False)
         
-        # Learnable bandwidth/sigma for the kernel
+        # Set bandwidth / sigma for kernel (learnable)
         self.std = nn.Parameter(torch.tensor(num_clusters / (height * width) ** 0.5))
     
-    def forward(self, combined_features):
-        batch_size = combined_features.shape[0]
+    def forward(self, x):
+        batch_size = x.shape[0]
         
-        # Assume combined_features includes both features and edges, so we'll work with both
-        edges = combined_features[:, -1:]  # Assuming last channel is edges
-        features = combined_features[:, :-1]  # Rest are features
-
         if self.learnable_centroids:
             # Use fixed learnable centroids
             sy = self.sy
             sx = self.sx
         else:
             # Compute gradients using Sobel filters
-            Gx = self.sobel_x(edges)  # Gradient in x direction
-            Gy = self.sobel_y(edges)  # Gradient in y direction
+            Gx = self.sobel_x(x)  # Gradient in x direction
+            Gy = self.sobel_y(x)  # Gradient in y direction
             gradient_magnitude = torch.sqrt(Gx ** 2 + Gy ** 2)
             
             # Invert the gradient magnitude to highlight low-gradient regions
@@ -67,11 +67,11 @@ class VoronoiPropagation(nn.Module):
         N = batch_size * self.height * self.width
         
         # Create shape tensor
-        shape = torch.tensor([batch_size, self.height, self.width, 1], device=combined_features.device)[:, None]
+        shape = torch.tensor([batch_size, self.height, self.width, 1], device=device)[:, None]
         
         # Calculate pixel coordinates
         coefs = shape[1:].flipud().cumprod(dim=0).flipud()
-        byx = torch.div(torch.arange(N, device=combined_features.device)[None], coefs, rounding_mode='trunc') % shape[:-1]
+        byx = torch.div(torch.arange(N, device=device)[None], coefs, rounding_mode='trunc') % shape[:-1]
 
         # Normalize y, x coordinates
         y = byx[1] / self.height  # Shape: [N]
@@ -81,57 +81,84 @@ class VoronoiPropagation(nn.Module):
         y = y.view(batch_size, self.height * self.width, 1)  # Shape: [B, HW, 1]
         x = x.view(batch_size, self.height * self.width, 1)  # Shape: [B, HW, 1]
         
-        # Compute L2 distance using the centroids (this time with both spatial and feature distances)
-        feature_centroids = torch.mean(features, dim=[2, 3])  # Average features per superpixel
-
-        # Combine spatial and feature distances (you can adjust weight here)
-        spatial_distance = gauss2d(y - sy.unsqueeze(1), x - sx.unsqueeze(1), self.std)
-        feature_distance = F.pairwise_distance(features.view(batch_size, -1), feature_centroids.unsqueeze(2).repeat(1, 1, self.height * self.width).view(batch_size, -1))
-
-        # Combine both distance metrics
-        combined_distance = spatial_distance + feature_distance.view(batch_size, self.num_clusters, self.height, self.width)
-
+        # Compute L2 distance using the centroids
+        l2 = gauss2d(y - sy.unsqueeze(1), x - sx.unsqueeze(1), self.std)
         # Softmax to get soft Voronoi regions
-        markers = F.softmax(combined_distance, dim=1).view(batch_size, self.num_clusters, self.height, self.width)
+        markers = F.softmax(l2, dim=1).view(batch_size, self.num_clusters, self.height, self.width)
         
         return markers
 
 def gauss1d(x, std): return x.div(std).pow_(2).neg_().exp_()
 def gauss2d(x, y, std): return (gauss1d(x, std) + gauss1d(y, std)) / 2
 
-
-class UNetWithEdgeDetection(nn.Module):
-    def __init__(self):
-        super(UNetWithEdgeDetection, self).__init__()
-        self.unet = smp.Unet(encoder_name="resnet34", encoder_weights="imagenet", in_channels=3, classes=64)  # Output: feature map
-        self.learnable_edge_filter = nn.Conv2d(64, 1, kernel_size=3, padding=1)  # Learnable edge detection
-    
-    def forward(self, x):
-        features = self.unet(x)
-        edges = self.learnable_edge_filter(features)
-        return features, edges
-
-
 class DifferentiableWatershedWithVoronoi(nn.Module):
-    def __init__(self, num_markers=3, height=224, width=224):
+    def __init__(self, num_markers=3, num_iterations=20, rnn_hidden_channels=51):
         super(DifferentiableWatershedWithVoronoi, self).__init__()
+
+        self.num_markers = num_markers
+
+        # Define Sobel kernels
+        self.Kx = torch.tensor([[-1, 0, 1], 
+                        [-2, 0, 2], 
+                        [-1, 0, 1]], dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
         
+        self.Ky = torch.tensor([[ 1,  2,  1], 
+                        [ 0,  0,  0], 
+                        [-1, -2, -1]], dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
+        
+        self.grayscale_transform = transforms.Grayscale(num_output_channels=1)  # No need to send to device, done in forward pass
+
         # Voronoi propagation module
-        self.voronoi_propagation = VoronoiPropagation(num_clusters=num_markers, height=height, width=width)
+        self.voronoi_propagation = VoronoiPropagation(num_clusters=num_markers, height=224, width=224)
         
-        # U-Net with learnable edge detection
-        self.unet_with_edge_detection = UNetWithEdgeDetection()
+        self.unet = smp.Unet(encoder_name="resnet34", encoder_weights="imagenet", in_channels=num_markers+4, classes=num_markers).to(device)
+        
+        self.final_conv = nn.Conv2d(rnn_hidden_channels, num_markers, kernel_size=1)
 
+        
     def forward(self, image):
-        # Pass the image through U-Net to get features and edges
-        features, edges = self.unet_with_edge_detection(image)
-        
-        # Concatenate features with edges for richer input to Voronoi propagation
-        combined_features = torch.cat((features, edges), dim=1)
-        
-        # Use Voronoi propagation on the combined features to assign labels
-        labels = self.voronoi_propagation(combined_features)
-        
-        return labels
+        if image.shape[1] == 3:  
+            image_greyscale_converted = self.grayscale_transform(image).to(device)
 
+        # Convolve the image with the Sobel kernels
+        Gx = F.conv2d(image_greyscale_converted, self.Kx, padding=1)
+        Gy = F.conv2d(image_greyscale_converted, self.Ky, padding=1)
+        
+        # Calculate the gradient magnitude
+        G = torch.hypot(Gx, Gy)
+        G = torch.sigmoid(G)
+        # Generate markers using Voronoi propagation
+        markers = self.voronoi_propagation(image_greyscale_converted.to(device))
+        concatenated_input = torch.cat((image, markers, G), dim=1)
+        output = self.unet(concatenated_input)
+        
+        return output
+    
+    
+    
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
 
+    img_size = 224
+    batch_size = 1
+    num_channels = 1
+    
+    # Create a simple synthetic image with two circles
+    img = torch.zeros((batch_size, num_channels, img_size, img_size), dtype=torch.float32)
+    img[0, 0, 40:60, 40:60] = 1
+    img[0, 0, 70:90, 70:90] = 1
+    
+    learnable_watershed = LearnableWatershedWithRNN(num_markers=3)
+    segmentation = learnable_watershed(img)
+    segmentation = segmentation.argmax(dim=1, keepdim=True)
+    
+    segmentation_np = segmentation.squeeze().detach().cpu().numpy()
+    
+    plt.figure(figsize=(12, 6))
+    plt.subplot(1, 2, 1)
+    plt.title("Original Image")
+    plt.imshow(img.squeeze().detach().cpu().numpy(), cmap='gray')
+    plt.subplot(1, 2, 2)
+    plt.title("Segmentation Result")
+    plt.imshow(segmentation_np, cmap='jet')
+    plt.show()
