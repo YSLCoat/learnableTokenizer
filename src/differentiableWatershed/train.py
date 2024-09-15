@@ -12,7 +12,7 @@ import sys
 sys.path.append(r'D:\MSc_Data_Science_UiO\Thesis\learnableTokenizer\src')
 from torchvision import transforms
 from torch.optim import AdamW
-from differentiableWatershed.model2 import DifferentiableWatershedWithVoronoi
+from differentiableWatershed.model import VoronoiPropagation
 from torchinfo import summary
 from differentiableSlic.lib.dataset import augmentation
 from utils import train, plot, calculate_warmup_epochs, DiceLoss
@@ -113,7 +113,7 @@ if __name__ == '__main__':
     test_dataset = BSDS(r'D:\Data', split="val")
     test_loader = DataLoader(test_dataset, 12, shuffle=False, drop_last=False)
     
-    model = DifferentiableWatershedWithVoronoi(num_markers=args.n_classes).to(device)
+    model = VoronoiPropagation(num_clusters=args.n_classes).to(device)
     #model = smp.Unet(encoder_name="resnet34", encoder_weights="imagenet", in_channels=3, classes=args.n_classes).to(device)
     # scaler = torch.cuda.amp.GradScaler() # this will help us to use mixed precision training
     #summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)

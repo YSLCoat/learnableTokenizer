@@ -1,164 +1,168 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import transforms
-from scipy.ndimage import distance_transform_edt
-from skimage.segmentation import find_boundaries
+import torchvision
 import segmentation_models_pytorch as smp
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-    
 
 class VoronoiPropagation(nn.Module):
-    def __init__(self, num_clusters=50, height=224, width=224, learnable_centroids=False):
+    def __init__(self, num_clusters=64, height=224, width=224, device='cpu'):
+        """
+        Args:
+            num_clusters (int): Number of clusters (centroids) to initialize.
+            height (int): Height of the input image.
+            width (int): Width of the input image.
+            device (str): Device to run the model ('cpu' or 'cuda').
+        """
         super(VoronoiPropagation, self).__init__()
-        self.num_clusters = num_clusters
-        self.height = height
-        self.width = width
-        self.learnable_centroids = learnable_centroids
         
-        if learnable_centroids:
-            self.sy = nn.Parameter(torch.rand(1, num_clusters))
-            self.sx = nn.Parameter(torch.rand(1, num_clusters))  
-        else:
-            self.sobel_x = nn.Conv2d(1, 1, kernel_size=3, padding=1, bias=False)
-            self.sobel_y = nn.Conv2d(1, 1, kernel_size=3, padding=1, bias=False)
-            sobel_x_filter = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-            sobel_y_filter = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-            self.sobel_x.weight = nn.Parameter(sobel_x_filter, requires_grad=False)
-            self.sobel_y.weight = nn.Parameter(sobel_y_filter, requires_grad=False)
+        self.C = num_clusters
+        self.H = height
+        self.W = width
+        self.device = torch.device(device)
         
-        # Set bandwidth / sigma for kernel (learnable)
-        self.std = nn.Parameter(torch.tensor(num_clusters / (height * width) ** 0.5))
-    
+        self.unet = smp.Unet(encoder_name="resnet34",
+                             encoder_weights="imagenet",  
+                             in_channels=3,               
+                             classes=3)   
+        
+        # Set bandwidth / sigma for kernel
+        self.std = self.C / (self.H * self.W)**0.5
+        
+        self.convert_to_greyscale = torchvision.transforms.Grayscale(num_output_channels=1)
+
+    def compute_gradient_map(self, x):
+        # Sobel kernels for single-channel input
+        sobel_x = torch.tensor([[[[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]]], device=x.device, dtype=x.dtype)
+        sobel_y = torch.tensor([[[[-1, -2, -1], [0, 0, 0], [1, 2, 1]]]], device=x.device, dtype=x.dtype)
+        
+        # Apply Sobel filters
+        grad_x = F.conv2d(x, sobel_x, padding=1)
+        grad_y = F.conv2d(x, sobel_y, padding=1)
+        
+        # Compute gradient magnitude
+        grad_map = torch.sqrt(grad_x.pow(2) + grad_y.pow(2))
+        return grad_map
+
+    def place_centroids_on_grid(self, batch_size):
+        num_rows = int(self.C ** 0.5)  # Number of rows of centroids
+        num_cols = int(self.C ** 0.5)  # Number of columns of centroids
+        grid_spacing_y = self.H // num_rows  # Vertical grid spacing
+        grid_spacing_x = self.W // num_cols  # Horizontal grid spacing
+        
+        centroids = []
+        for i in range(num_rows):
+            for j in range(num_cols):
+                y = int((i + 0.5) * grid_spacing_y) # Center centroid in the grid
+                x = int((j + 0.5) * grid_spacing_x)
+                centroids.append([y, x])
+        
+        # If we need more centroids, place them in the center of the image
+        while len(centroids) < self.C:
+            centroids.append([self.H // 2, self.W // 2])
+
+        centroids = torch.tensor(centroids, device=self.device).float()
+        return centroids.unsqueeze(0).repeat(batch_size, 1, 1)
+
+    def find_nearest_minima(self, centroids, grad_map, neighborhood_size=10):
+        updated_centroids = []
+        B, _, _ = centroids.shape  
+        
+        for batch_idx in range(B):
+            updated_centroids_batch = []
+            for centroid in centroids[batch_idx]:
+                y, x = centroid  
+                
+                # Define the search window around the centroid
+                y_min = max(0, int(y) - neighborhood_size)
+                y_max = min(self.H, int(y) + neighborhood_size)
+                x_min = max(0, int(x) - neighborhood_size)
+                x_max = min(self.W, int(x) + neighborhood_size)
+                
+                # Extract the gradient values in the neighborhood
+                neighborhood = grad_map[batch_idx, 0, y_min:y_max, x_min:x_max]
+                min_coords = torch.nonzero(neighborhood == torch.min(neighborhood), as_tuple=False)[0]
+                new_y = y_min + min_coords[0].item()
+                new_x = x_min + min_coords[1].item()
+                
+                updated_centroids_batch.append([new_y, new_x])
+            
+            updated_centroids.append(torch.tensor(updated_centroids_batch, device=self.device))
+        
+        return torch.stack(updated_centroids, dim=0)
+
+    def distance_weighted_propagation(self, centroids, grad_map, color_map, num_iters=50, gradient_weight=10.0, color_weight=10.0, edge_exponent=4.0): # gradient weight, color weight and edge exponent are all tuneable parameters 
+        """
+        Perform Voronoi-like propagation from centroids, guided by both the gradient map and color similarity.
+        
+        Args:
+            centroids (Tensor): Initial centroid positions.
+            grad_map (Tensor): Gradient magnitude map.
+            color_map (Tensor): Input image for color similarity.
+            num_iters (int): Number of iterations to perform propagation.
+            gradient_weight (float): Weight for the gradient penalty.
+            color_weight (float): Weight for the color similarity penalty.
+            edge_exponent (float): Exponent to amplify edge gradients.
+        
+        Returns:
+            Tensor: Final segmentation mask.
+        """
+        B, _, H, W = grad_map.shape
+        mask = torch.full((B, H, W), fill_value=-1, device=grad_map.device)  # Label mask
+        dist_map = torch.full((B, H, W), fill_value=float('inf'), device=grad_map.device)  # Distance map
+        
+        for batch_idx in range(B):
+            for idx, (cy, cx) in enumerate(centroids[batch_idx]):
+                mask[batch_idx, int(cy), int(cx)] = idx
+                dist_map[batch_idx, int(cy), int(cx)] = 0  # Distance from centroid is 0 initially
+        
+        # 4-connected neighbors (dy, dx)
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        
+        # Amplify the impact of the gradient map by multiplying it with a weight and applying a non-linear transformation
+        weighted_grad_map = (grad_map ** edge_exponent) * gradient_weight
+
+        # Perform propagation with both gradient penalties and color similarity
+        for _ in range(num_iters):
+            for dy, dx in directions:
+                # Shift the distance map in each direction
+                shifted_dist = torch.roll(dist_map, shifts=(dy, dx), dims=(1, 2))
+                shifted_mask = torch.roll(mask, shifts=(dy, dx), dims=(1, 2))
+                
+                # Calculate color distance between current pixel and centroid it is being propagated from
+                color_diff = torch.abs(color_map - torch.roll(color_map, shifts=(dy, dx), dims=(2, 3))).sum(dim=1)  # Sum over color channels
+
+                # Add the gradient map value as a weighted penalty to the distance
+                weighted_dist = shifted_dist + weighted_grad_map[:, 0, :, :] + color_diff * color_weight
+                
+                # Update the mask and distance map where the new combined distance is smaller
+                update_mask = weighted_dist < dist_map
+                dist_map[update_mask] = weighted_dist[update_mask]
+                mask[update_mask] = shifted_mask[update_mask]
+        
+        return mask
+        
     def forward(self, x):
-        batch_size = x.shape[0]
+        B, C_in, H, W = x.shape
         
-        if self.learnable_centroids:
-            # Use fixed learnable centroids
-            sy = self.sy
-            sx = self.sx
+        if C_in == 3:
+            grayscale_image = self.convert_to_greyscale(x)
         else:
-            # Compute gradients using Sobel filters
-            Gx = self.sobel_x(x)  # Gradient in x direction
-            Gy = self.sobel_y(x)  # Gradient in y direction
-            gradient_magnitude = torch.sqrt(Gx ** 2 + Gy ** 2)
-            
-            # Invert the gradient magnitude to highlight low-gradient regions
-            weight = 0.5  # This value can be fine-tuned
-            inverted_gradient = 1.0 - (weight * gradient_magnitude)
-            
-            # Downsample the gradient to approximate centroid positions
-            downsampled = F.adaptive_avg_pool2d(inverted_gradient, (self.num_clusters, self.num_clusters))
-            
-            # Flatten downsampled tensor and use topk to find the top `num_clusters` values for each image
-            downsampled_flat = downsampled.view(batch_size, -1)
-            topk_vals, topk_indices = torch.topk(downsampled_flat, self.num_clusters, dim=1)
-            
-            # Convert the 1D indices to 2D coordinates (row, col) in the downsampled space
-            sy = topk_indices // self.num_clusters
-            sx = topk_indices % self.num_clusters
-            
-            # Normalize the coordinates (sy, sx) to the [0, 1] range
-            sy = sy.float() / (self.num_clusters)
-            sx = sx.float() / (self.num_clusters)
+            grayscale_image = x
         
-        # Get the total number of pixels in the batch
-        N = batch_size * self.height * self.width
+        # Compute the gradient map from grayscale image
+        grad_map = self.compute_gradient_map(grayscale_image)
         
-        # Create shape tensor
-        shape = torch.tensor([batch_size, self.height, self.width, 1], device=device)[:, None]
+        # Place centroids on a grid
+        centroids = self.place_centroids_on_grid(B)
         
-        # Calculate pixel coordinates
-        coefs = shape[1:].flipud().cumprod(dim=0).flipud()
-        byx = torch.div(torch.arange(N, device=device)[None], coefs, rounding_mode='trunc') % shape[:-1]
-
-        # Normalize y, x coordinates
-        y = byx[1] / self.height  # Shape: [N]
-        x = byx[2] / self.width   # Shape: [N]
-
-        # Reshape y and x to include the batch dimension for broadcasting
-        y = y.view(batch_size, self.height * self.width, 1)  # Shape: [B, HW, 1]
-        x = x.view(batch_size, self.height * self.width, 1)  # Shape: [B, HW, 1]
+        # Move centroids to nearest local minima
+        centroids = self.find_nearest_minima(centroids, grad_map)
         
-        # Compute L2 distance using the centroids
-        l2 = gauss2d(y - sy.unsqueeze(1), x - sx.unsqueeze(1), self.std)
-        # Softmax to get soft Voronoi regions
-        markers = F.softmax(l2, dim=1).view(batch_size, self.num_clusters, self.height, self.width)
+        # Use the color map (the original image) to guide propagation
+        spixel_features = self.unet(x)
         
-        return markers
-
-def gauss1d(x, std): return x.div(std).pow_(2).neg_().exp_()
-def gauss2d(x, y, std): return (gauss1d(x, std) + gauss1d(y, std)) / 2
-
-class DifferentiableWatershedWithVoronoi(nn.Module):
-    def __init__(self, num_markers=3, num_iterations=20, rnn_hidden_channels=51):
-        super(DifferentiableWatershedWithVoronoi, self).__init__()
-
-        self.num_markers = num_markers
-
-        # Define Sobel kernels
-        self.Kx = torch.tensor([[-1, 0, 1], 
-                        [-2, 0, 2], 
-                        [-1, 0, 1]], dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
+        # Perform distance-weighted propagation with both gradient and color guidance
+        mask = self.distance_weighted_propagation(centroids, grad_map, spixel_features)
         
-        self.Ky = torch.tensor([[ 1,  2,  1], 
-                        [ 0,  0,  0], 
-                        [-1, -2, -1]], dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
-        
-        self.grayscale_transform = transforms.Grayscale(num_output_channels=1)  # No need to send to device, done in forward pass
-
-        # Voronoi propagation module
-        self.voronoi_propagation = VoronoiPropagation(num_clusters=num_markers, height=224, width=224)
-        
-        self.unet = smp.Unet(encoder_name="resnet34", encoder_weights="imagenet", in_channels=num_markers+4, classes=num_markers).to(device)
-        
-        self.final_conv = nn.Conv2d(rnn_hidden_channels, num_markers, kernel_size=1)
-
-        
-    def forward(self, image):
-        if image.shape[1] == 3:  
-            image_greyscale_converted = self.grayscale_transform(image).to(device)
-
-        # Convolve the image with the Sobel kernels
-        Gx = F.conv2d(image_greyscale_converted, self.Kx, padding=1)
-        Gy = F.conv2d(image_greyscale_converted, self.Ky, padding=1)
-        
-        # Calculate the gradient magnitude
-        G = torch.hypot(Gx, Gy)
-        G = torch.sigmoid(G)
-        # Generate markers using Voronoi propagation
-        markers = self.voronoi_propagation(image_greyscale_converted.to(device))
-        concatenated_input = torch.cat((image, markers, G), dim=1)
-        output = self.unet(concatenated_input)
-        
-        return output
-    
-    
-    
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-
-    img_size = 224
-    batch_size = 1
-    num_channels = 1
-    
-    # Create a simple synthetic image with two circles
-    img = torch.zeros((batch_size, num_channels, img_size, img_size), dtype=torch.float32)
-    img[0, 0, 40:60, 40:60] = 1
-    img[0, 0, 70:90, 70:90] = 1
-    
-    learnable_watershed = LearnableWatershedWithRNN(num_markers=3)
-    segmentation = learnable_watershed(img)
-    segmentation = segmentation.argmax(dim=1, keepdim=True)
-    
-    segmentation_np = segmentation.squeeze().detach().cpu().numpy()
-    
-    plt.figure(figsize=(12, 6))
-    plt.subplot(1, 2, 1)
-    plt.title("Original Image")
-    plt.imshow(img.squeeze().detach().cpu().numpy(), cmap='gray')
-    plt.subplot(1, 2, 2)
-    plt.title("Segmentation Result")
-    plt.imshow(segmentation_np, cmap='jet')
-    plt.show()
+        return grad_map, centroids, mask

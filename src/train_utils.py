@@ -6,7 +6,7 @@ import torch.nn as nn
 
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.distributed import init_process_group, destroy_process_group
+from torch.distributed import init_process_group
 import os
 from tqdm import tqdm
 import time
@@ -17,7 +17,7 @@ import quixdata
 def ddp_setup(rank, world_size):
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "12355"
-    init_process_group(backend="nccl", rank=rank, world_size=world_size)
+    init_process_group(backend="gloo", rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
 
 class Trainer:

@@ -5,39 +5,48 @@ import torch.nn as nn
 from timm.models._manipulate import checkpoint_seq
 from feature_extractors.spatial_transformer import AttentionSpatialTransformer
 from learnable_tokenizers.spixelFCN.models.Spixel_single_layer import SpixelNet
+from differentiableWatershed.model import VoronoiPropagation
 
 class differentiableSuperpixelEmbedding(nn.Module):
     def __init__(self, max_segments, n_channels=3, embed_dim=768):
         super().__init__()
-        self.superpixel_tokenizer = SpixelNet(num_segments=max_segments)
+        self.superpixel_tokenizer = VoronoiPropagation(max_segments)
         self.feature_extractor = AttentionSpatialTransformer(embed_dim, n_channels=n_channels)
         self.max_segments = max_segments  # This should be the maximum expected number of segments
 
     def forward(self, img):
-        segments = self.superpixel_tokenizer(img)
-        _, segmentation_labels = torch.max(segments, dim=1)
-
-        batch_segment_features = []
-        for image, segments in zip(img, segmentation_labels):
-            # Collect all segment images for this batch
-            segmented_images = [image * (segments == label).unsqueeze(0) for label in torch.unique(segments)]
-            segmented_images = torch.stack(segmented_images)
+        # Get the superpixel segments from the tokenizer
+        _, _, segments = self.superpixel_tokenizer(img)  # segments shape: [batch_size, height, width]
+        
+        batch_size, n_channels, height, width = img.shape
+        
+        # Flatten the spatial dimensions for efficient indexing
+        img_flat = img.view(batch_size, n_channels, -1)  # [batch_size, n_channels, height * width]
+        segments_flat = segments.view(batch_size, -1)  # [batch_size, height * width]
+        
+        # Create a tensor to accumulate the masked regions for each segment
+        segment_features = torch.zeros(batch_size, self.max_segments, n_channels, height, width, device=img.device)
+        
+        # Loop over each segment ID and use scatter_add to aggregate the pixel values
+        for segment_id in range(self.max_segments):
+            # Create a mask for the current segment across all images in the batch
+            segment_mask = (segments_flat == segment_id).unsqueeze(1)  # [batch_size, 1, height * width]
             
-            # Process all segments at once
-            segmented_features = self.feature_extractor(segmented_images)
-            flattened_features = segmented_features.view(segmented_features.shape[0], -1)
+            # Scatter the pixel values for each segment into the output tensor
+            masked_img_flat = img_flat * segment_mask.float()  # Zero out pixels not in the segment
+            segment_features[:, segment_id, :, :, :] += masked_img_flat.view(batch_size, n_channels, height, width)
 
-            # Efficient padding to max_segments
-            if flattened_features.size(0) < self.max_segments:
-                padding_size = self.max_segments - flattened_features.size(0)
-                padding = torch.zeros(padding_size, flattened_features.size(1), device=flattened_features.device)
-                flattened_features = torch.cat([flattened_features, padding], dim=0)
-
-            batch_segment_features.append(flattened_features)
-
-        # Stack all batch features and ensure they are padded to max_segments
-        batch_segment_features_tensor = torch.stack(batch_segment_features)
-        return batch_segment_features_tensor
+        # Now extract features from each segment's masked image
+        # Flatten segments and batch for processing in one go
+        segment_features_flat = segment_features.view(batch_size * self.max_segments, n_channels, height, width)
+        
+        # Apply feature extractor to each segment
+        extracted_features = self.feature_extractor(segment_features_flat)
+        
+        # Reshape back to original batch and segment size
+        extracted_features = extracted_features.view(batch_size, self.max_segments, -1)  # [batch_size, max_segments, feature_dim]
+        
+        return extracted_features
 
 class differentiableTokenizerVisionTransformer(nn.Module):
     def __init__(self, model_name, max_segments, num_classes, num_channels, pretrained=False):
