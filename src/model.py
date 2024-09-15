@@ -36,7 +36,6 @@ class differentiableSuperpixelEmbedding(nn.Module):
             masked_img_flat = img_flat * segment_mask.float()  # Zero out pixels not in the segment
             segment_features[:, segment_id, :, :, :] += masked_img_flat.view(batch_size, n_channels, height, width)
 
-        # Now extract features from each segment's masked image
         # Flatten segments and batch for processing in one go
         segment_features_flat = segment_features.view(batch_size * self.max_segments, n_channels, height, width)
         
