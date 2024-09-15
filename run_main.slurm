@@ -4,9 +4,9 @@
 #SBATCH --account=ec232
 #SBATCH --time=100:00:00
 #SBATCH --partition=ifi_accel    # To use the accelerator nodes
-#SBATCH --gpus=4
-#SBATCH --nodes=2
-#SBATCH --mem-per-gpu=100G
+#SBATCH --gpus=2
+#SBATCH --nodes=1
+#SBATCH --mem-per-gpu=24G
 #SBATCH --cpus-per-task=10
 
 # the important bit: unload all current modules (just in case) and load only the necessary ones
