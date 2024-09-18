@@ -21,7 +21,7 @@ class VoronoiPropagation(nn.Module):
         self.W = width
         self.device = torch.device(device)
         
-        self.unet = smp.Unet(encoder_name="resnet34",
+        self.unet = smp.Unet(encoder_name="efficientnet-b0",
                              encoder_weights="imagenet",  
                              in_channels=3,               
                              classes=3)   
