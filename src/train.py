@@ -24,7 +24,7 @@ def main(rank, world_size, args):
     ddp_setup(rank, world_size)
     verify_model_name(args.model_name)
     model = differentiableTokenizerVisionTransformer(args.model_name, args.n_segments, args.n_classes, args.n_channels)
-    #summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
+    summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
     
     optimizer = AdamW(model.parameters(), betas=[args.beta_1, args.beta_2], lr=args.lr, weight_decay=args.weight_decay)
     
