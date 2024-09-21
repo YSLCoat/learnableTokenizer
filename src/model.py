@@ -4,7 +4,6 @@ import torch.nn as nn
 
 from timm.models._manipulate import checkpoint_seq
 from feature_extractors.spatial_transformer import AttentionSpatialTransformer
-from learnable_tokenizers.spixelFCN.models.Spixel_single_layer import SpixelNet
 from differentiableWatershed.model import VoronoiPropagation
 
 class differentiableSuperpixelEmbedding(nn.Module):

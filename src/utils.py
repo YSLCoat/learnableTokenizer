@@ -221,22 +221,6 @@ def train(args,
     # Return the filled results at the end of the epochs
     return results
 
-class DiceLoss(nn.Module):
-    def __init__(self, smooth=1.0):
-        super(DiceLoss, self).__init__()
-        self.smooth = smooth
-
-    def forward(self, inputs, targets):
-        # Flatten the input and target tensors
-        inputs = inputs.view(-1)
-        targets = targets.view(-1)
-
-        # Calculate intersection and union
-        intersection = (inputs * targets).sum()
-        dice_score = (2. * intersection + self.smooth) / (inputs.sum() + targets.sum() + self.smooth)
-
-        return 1 - dice_score  # Dice loss is 1 - Dice coefficient
-
 
 def plot(results, output_path):
     fig_loss = go.Figure()
@@ -292,48 +276,10 @@ def verify_model_name(model_name):
         assert 0, "Model configuration not found in timm."
         
         
-def check_accuracy_binary(loader,model,device):
-    num_correct = 0
-    num_pixels = 0
-    dice_score = 0
-    model.eval()
-
-    with torch.no_grad():
-        for x, y in loader:
-            x = x.to(device)
-            y = y.to(device).unsqueeze(1)
-            preds = torch.sigmoid(model(x))
-            preds = (preds > 0.5).float()
-            num_correct += (preds == y).sum()
-            num_pixels += torch.numel(preds)
-            dice_score += (2 * (preds * y).sum()) / ((preds + y).sum() + 1e-8)
-
-    print(
-        f'Got {num_correct}/{num_pixels} with acc {num_correct/num_pixels*100:.2f}'
-    )
-    print(f'Dice score: {dice_score/len(loader)}')
-    model.train()
-    return dice_score/len(loader)
-
-from torchvision.utils import save_image
-
-
-def save_predictions_as_imgs(loader, model, device, folder="saved_images/"):
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-    num_examples = 0
+def load_model_from_state_dict(model, state_dict_path):
+    state_dict = torch.load(state_dict_path)
+    model.load_state_dict(state_dict)
     
-    model.eval()
-    for idx, (x, y) in enumerate(loader):
-        x = x.to(device=device)
-        with torch.no_grad():
-            preds = torch.sigmoid(model(x))
-            preds = (preds > 0.5).float()
+    return model
         
-        for i in range(preds.size(0)):  # Iterate over each image in the batch
-            torchvision.utils.save_image(preds[i], os.path.join(folder, f"pred_{idx}_{i}.png"))
-            torchvision.utils.save_image(y[i].unsqueeze(0), os.path.join(folder, f"mask_{idx}_{i}.png"))  # unsqueeze adds a channel dimension to the tensor
-            num_examples += 1
-            if num_examples == 10:
-                model.train()
-                return
+        

@@ -2,17 +2,12 @@
 Trains a PyTorch image classification model using device-agnostic code.
 """
 
-import os
 import torch
 import argparse
-import torch.nn as nn
-import time
-import torchvision
-from torchvision import transforms
+
 from torch.optim import AdamW
 from model import differentiableTokenizerVisionTransformer
 from torchinfo import summary
-import quixdata
 import torch.multiprocessing as mp
 
 from train_utils import *
@@ -32,7 +27,7 @@ def main(rank, world_size, args):
     
     train_dataloader = prepare_dataloader(train_dataset, args.batch_size)
     val_dataloader = prepare_dataloader(val_dataset, args.batch_size)
-    trainer = Trainer(model, train_dataloader, val_dataloader, optimizer, rank, args.save_every)
+    trainer = Trainer(args, model, train_dataloader, val_dataloader, optimizer, rank, args.save_every)
     trainer.train(args.epochs)
     destroy_process_group()
 
@@ -40,6 +35,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train model")
     parser.add_argument("--data_subfolder_path", default=r"F:\data")
     parser.add_argument("--data_folder_name", default=r"IN1k")
+    parser.add_argument("--pretrained_model_path")
+    parser.add_argument("--train_from_checkpoint", action="store_true", help="Load model from checkpoint and continue training")
     
     parser.add_argument("--lr_scheduler", default=True, type=bool)
     parser.add_argument("--lr", default=1e-4, type=float)

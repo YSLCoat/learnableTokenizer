@@ -12,6 +12,7 @@ from tqdm import tqdm
 import time
 from datetime import timedelta
 import quixdata
+from utils import load_model_from_state_dict
 
 
 def ddp_setup(rank, world_size):
@@ -23,6 +24,7 @@ def ddp_setup(rank, world_size):
 class Trainer:
     def __init__(
         self,
+        args,
         model: torch.nn.Module,
         train_data: DataLoader,
         val_data: DataLoader,
@@ -36,6 +38,9 @@ class Trainer:
         self.val_data = val_data
         self.optimizer = optimizer
         self.save_every = save_every
+        
+        if args.train_from_checkpoint:
+            self.model = load_model_from_state_dict(self.model, args.pretrained_model_path)
         
         self.model = DDP(self.model, device_ids=[self.gpu_id], find_unused_parameters=True)
 
