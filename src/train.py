@@ -11,13 +11,11 @@ from torchinfo import summary
 import torch.multiprocessing as mp
 
 from train_utils import *
-from utils import verify_model_name
 from torch.distributed import destroy_process_group
 
 
 def main(rank, world_size, args):
     ddp_setup(rank, world_size)
-    verify_model_name(args.model_name)
     model = differentiableTokenizerVisionTransformer(args.model_name, args.n_segments, args.n_classes, args.n_channels)
     summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
     
@@ -57,18 +55,6 @@ if __name__ == '__main__':
     parser.add_argument("--n_channels", default=3, type=int)
     parser.add_argument("--img_size", default=224, type=int)
     parser.add_argument("--n_segments", default=50, type=int)
-    
-    # Check if CUDA is available
-    if torch.cuda.is_available():
-        # Get the number of GPUs
-        num_gpus = torch.cuda.device_count()
-        print(f"Number of available GPUs: {num_gpus}")
-        
-        # Print the name of each available GPU
-        for i in range(num_gpus):
-            print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
-    else:
-        print("No GPUs available.")
     
     args = parser.parse_args()
     world_size = torch.cuda.device_count()

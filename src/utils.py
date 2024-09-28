@@ -13,6 +13,18 @@ import os
 mean = torch.tensor([0.485, 0.456, 0.406]).to("cuda")
 std = torch.tensor([0.229, 0.224, 0.225]).to("cuda")
 
+def get_available_gpus():
+    if torch.cuda.is_available():
+        # Get the number of GPUs
+        num_gpus = torch.cuda.device_count()
+        print(f"Number of available GPUs: {num_gpus}")
+        
+        # Print the name of each available GPU
+        for i in range(num_gpus):
+            print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+    else:
+        print("No GPUs available.")
+
 def train_step(model: torch.nn.Module, 
                dataloader: torch.utils.data.DataLoader, 
                loss_fn: torch.nn.Module, 
@@ -257,24 +269,7 @@ def calculate_warmup_epochs(dataset_size, batch_size, total_forward_passes):
     # Calculate the total number of epochs needed
     total_epochs = total_forward_passes / batches_per_epoch
 
-    return total_epochs
-
-def verify_model_name(model_name):
-    # List of ViT models with image size 224
-    vit_models_224 = [
-        'vit_tiny_patch16_224',
-        'vit_small_patch16_224',
-        'vit_base_patch16_224',
-        'vit_large_patch16_224',
-        'vit_huge_patch14_224'
-    ]
-    
-    # Check if the provided model name is in the list
-    if model_name in vit_models_224:
-        print("Loading model config for: ", model_name)
-    else:
-        assert 0, "Model configuration not found in timm."
-        
+    return total_epochs        
         
 def load_model_from_state_dict(model, state_dict_path):
     state_dict = torch.load(state_dict_path)
