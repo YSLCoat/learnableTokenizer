@@ -5,16 +5,18 @@ import torch.nn as nn
 from timm.models._manipulate import checkpoint_seq
 from differentiableWatershed.model import VoronoiPropagation
 
-class differentiableSuperpixelEmbedding(nn.Module):
-    def __init__(self, max_segments, n_channels=3, embed_dim=768, max_pixels_per_segment=400):
+class differentiableSuperpixelTokenizer(nn.Module):
+    def __init__(self, max_segments, n_channels=3, embed_dim=768):
         super().__init__()
         self.superpixel_tokenizer = VoronoiPropagation(max_segments)
         self.max_segments = max_segments
         self.embed_dim = embed_dim
-        self.max_pixels_per_segment = max_pixels_per_segment  # Max number of pixels to sample per segment
 
         # Linear layer to project raw pixel values to embedding space
-        self.feature_projection = nn.Linear(n_channels * max_pixels_per_segment, embed_dim)
+        self.feature_projection = nn.Linear(n_channels, embed_dim)
+
+        # Attention layer to pool variable-length pixel embeddings into a fixed-size embedding
+        self.attention_pool = nn.MultiheadAttention(embed_dim, num_heads=4)
 
     def forward(self, img):
         # Get the superpixel segments from the tokenizer
@@ -25,50 +27,41 @@ class differentiableSuperpixelEmbedding(nn.Module):
         img_flat = img.view(batch_size, n_channels, -1)  # [batch_size, n_channels, height * width]
         segments_flat = segments.view(batch_size, -1)    # [batch_size, height * width]
 
-        # Create a tensor to store the superpixel features for all segments
-        superpixel_features = torch.zeros(batch_size, self.max_segments, n_channels * self.max_pixels_per_segment, device=img.device)
+        superpixel_features = []
 
-        # Loop over each possible segment ID and gather pixels for all images in parallel
         for segment_id in range(self.max_segments):
-            # Create a mask for the current segment across the entire batch
+            # Create a mask for the current segment
             segment_mask = (segments_flat == segment_id)  # [batch_size, height * width]
 
-            # Check if any pixels are found for this segment
+            # Check if the segment contains any pixels
             if segment_mask.sum() == 0:
-                # print(f"No pixels found for segment {segment_id}")
+                # Append zeros for this segment if no pixels are found
+                superpixel_features.append(torch.zeros(batch_size, self.embed_dim, device=img.device))
                 continue
 
-            # Use torch.nonzero to get the pixel indices where the mask is True
-            pixel_indices = torch.nonzero(segment_mask, as_tuple=False)  # [num_selected_pixels, 2] (batch, pixel index)
+            # Gather the indices of the pixels belonging to the current segment
+            pixel_indices = torch.nonzero(segment_mask, as_tuple=True)  # Indices of pixels in the segment
 
-            for batch_idx in range(batch_size):
-                # Extract the pixel indices for the current batch
-                batch_pixel_indices = pixel_indices[pixel_indices[:, 0] == batch_idx, 1]  # [num_pixels_in_batch]
-                
-                # If no pixels are found, skip this segment for the current batch
-                if batch_pixel_indices.numel() == 0:
-                    #print(f"No pixels found for segment {segment_id} in batch {batch_idx}")
-                    continue
+            # Use the indices to gather the pixels in the segment from img_flat
+            pixels_in_segment = img_flat[:, :, pixel_indices[1]]  # [batch_size, n_channels, num_pixels_in_segment]
 
-                # Gather the pixels for the current segment in the current batch
-                pixels_in_segment = img_flat[batch_idx, :, batch_pixel_indices]  # [n_channels, num_pixels_in_segment]
-                num_pixels = pixels_in_segment.shape[1]
+            # Project raw pixel values directly to the embedding space
+            projected_pixels = self.feature_projection(pixels_in_segment.permute(2, 0, 1))  # [num_pixels, batch_size, embed_dim]
 
-                # Pad or truncate to max_pixels_per_segment
-                if num_pixels > self.max_pixels_per_segment:
-                    pixels_in_segment = pixels_in_segment[:, :self.max_pixels_per_segment]
-                else:
-                    # Pad with zeros if there are fewer pixels than the max allowed
-                    padding = torch.zeros(n_channels, self.max_pixels_per_segment - num_pixels, device=img.device)
-                    pixels_in_segment = torch.cat((pixels_in_segment, padding), dim=1)
+            # Apply attention to pool variable-length pixel sequences into a fixed-size embedding
+            attn_output, _ = self.attention_pool(projected_pixels, projected_pixels, projected_pixels)
 
-                # Flatten and store the pixel values in the superpixel_features tensor
-                superpixel_features[batch_idx, segment_id, :] = pixels_in_segment.flatten()
+            # Pool along the sequence dimension (num_pixels)
+            pooled_features = attn_output.mean(dim=0)  # [batch_size, embed_dim]
 
-        # Project the raw pixel values to the embedding space
-        projected_features = self.feature_projection(superpixel_features)  # [batch_size, max_segments, embed_dim]
+            # Store the pooled features for this segment
+            superpixel_features.append(pooled_features)
 
-        return projected_features
+        # Stack all the superpixel features into a tensor
+        superpixel_features = torch.stack(superpixel_features, dim=1)  # [batch_size, max_segments, embed_dim]
+
+        return superpixel_features
+
         
 
 class differentiableTokenizerVisionTransformer(nn.Module):
@@ -80,7 +73,7 @@ class differentiableTokenizerVisionTransformer(nn.Module):
         
         self.embed_dim = self.vit.embed_dim
         
-        self.patch_embed = differentiableSuperpixelEmbedding(
+        self.patch_embed = differentiableSuperpixelTokenizer(
             max_segments=max_segments,
             n_channels=num_channels,
             embed_dim=self.embed_dim
