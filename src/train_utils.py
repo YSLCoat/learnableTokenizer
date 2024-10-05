@@ -3,6 +3,8 @@ from torch.utils.data import Dataset, DataLoader
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 import torch.nn as nn
+from timm.data.auto_augment import rand_augment_transform
+from data_utils import mixup_augmentation
 
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -39,6 +41,7 @@ class Trainer:
         self.val_data = val_data
         self.optimizer = optimizer
         self.save_every = save_every
+        self.mixup_augmentation = mixup_augmentation(args.n_classes)
         
         if args.train_from_checkpoint:
             self.model = load_model_from_state_dict(self.model, args.pretrained_model_path)
@@ -64,6 +67,8 @@ class Trainer:
                 loss = torch.nn.CrossEntropyLoss()(output, targets)
                 return loss.item(), output.argmax(dim=1)
 
+        source, targets = self.mixup_augmentation(source, targets)
+        
         output = self.model(source)
         loss = torch.nn.CrossEntropyLoss()(output, targets)
         loss.backward()
@@ -142,12 +147,15 @@ def prepare_dataloader(dataset: Dataset, batch_size: int):
     )
     
 def prepare_datasets(args):
+    rand_aug = rand_augment_transform(config_str='rand-m9-mstd0.5', hparams={})
     # Define the postprocessing transformations
     postprocess = (
         transforms.Compose([
             transforms.Resize((args.img_size, args.img_size)),
+            rand_aug,
             transforms.ToTensor(),
-            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+            
         ]),
         nn.Identity(),
     )
