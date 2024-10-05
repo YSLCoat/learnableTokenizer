@@ -1,11 +1,24 @@
-# arg_parse.py
+# input_parser.py
 import argparse
 import sys
-
+import json
+import yaml
+import os
 
 def parse_input_args(input_args):
+    # First, create a parser that only parses --reproducibility_statement_file
+    initial_parser = argparse.ArgumentParser(description="Train model", add_help=False)
+    initial_parser.add_argument(
+        '--reproducibility_statement_file',
+        default=None,
+        help='Path to the reproducibility statement file (JSON or YAML). If provided, parameters are extracted from this file instead of the default values.'
+    )
+
+    args, _ = initial_parser.parse_known_args(input_args)
+
     parser = argparse.ArgumentParser(description="Train model")
 
+    # Define all the arguments
     parser.add_argument(
         "--data_subfolder_path", 
         default=r"F:\data", 
@@ -66,33 +79,14 @@ def parse_input_args(input_args):
     )
     parser.add_argument(
         "--model_name",
+        choices=[
+        "vit_tiny_patch16_224",
+        "vit_small_patch16_224",
+        "vit_base_patch16_224",
+        "vit_large_patch16_224"],
         default="vit_base_patch16_224",
         type=str,
         help="Insert vit_small, vit_base, vit_large or vit_huge for presets. Enter a custom name if using custom parameters.",
-    )
-    parser.add_argument(
-        "--embed_dim", 
-        default=768, 
-        type=int, 
-        help="Embedding dimension size"
-    )
-    parser.add_argument(
-        "--mlp_hidden_dim", 
-        default=3072, 
-        type=int, 
-        help="MLP hidden dimension size"
-    )
-    parser.add_argument(
-        "--num_attention_heads",
-        default=12,
-        type=int,
-        help="Number of attention heads in the transformer",
-    )
-    parser.add_argument(
-        "--num_transformer_blocks",
-        default=12,
-        type=int,
-        help="Number of transformer blocks",
     )
     parser.add_argument(
         "--n_classes", 
@@ -110,16 +104,54 @@ def parse_input_args(input_args):
         "--img_size", 
         default=224, 
         type=int, 
-        help="Input image size")
+        help="Input image size"
+    )
     parser.add_argument(
         "--n_segments",
         default=50,
         type=int,
         help="Number of segments for the tokenizer",
     )
+    parser.add_argument(
+        "--pretrained_model_path",
+        help="Path to the pretrained model"
+    )
+    parser.add_argument(
+        "--train_from_checkpoint", 
+        action="store_true", 
+        help="Load model from checkpoint and continue training"
+    )
+    parser.add_argument(
+        '--reproducibility_statement_file',
+        default=None,
+        help='Path to the reproducibility statement file (JSON or YAML). If provided, parameters are extracted from this file instead of the default values.'
+    )
 
-    # If input_args is None, use sys.argv[1:]
-    if input_args is None:
-        input_args = sys.argv[1:]
+    # If reproducibility_statement_file is provided, load the args from the file
+    if args.reproducibility_statement_file is not None:
+        # Load args from the file
+        file_ext = os.path.splitext(args.reproducibility_statement_file)[1]
+        if file_ext.lower() == '.json':
+            with open(args.reproducibility_statement_file, 'r') as f:
+                args_from_file = json.load(f)
+        elif file_ext.lower() in ['.yaml', '.yml']:
+            with open(args.reproducibility_statement_file, 'r') as f:
+                args_from_file = yaml.safe_load(f)
+        else:
+            raise ValueError('Unsupported file extension: {}'.format(file_ext))
 
-    return parser.parse_args(input_args)
+        # Set defaults in parser using the parameters from the file
+        parser.set_defaults(**args_from_file)
+
+    # Now parse all the arguments (command line args will override defaults)
+    args = parser.parse_args(input_args)
+
+    # After parsing the args, save them to a JSON file
+    save_args_to_json(args)
+
+    return args
+
+def save_args_to_json(args, filename='reproducibility_statement.json'):
+    args_dict = vars(args)
+    with open(filename, 'w') as f:
+        json.dump(args_dict, f, indent=4)
