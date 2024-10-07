@@ -21,7 +21,7 @@ def ddp_setup(rank, world_size):
     get_available_gpus()
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "12355"
-    init_process_group(backend="gloo", rank=rank, world_size=world_size)
+    init_process_group(backend="nvcc", rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
 
 class Trainer:

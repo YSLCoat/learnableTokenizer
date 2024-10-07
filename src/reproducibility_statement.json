@@ -9,7 +9,7 @@
     "batch_size": 2,
     "epochs": 500,
     "save_every": 1,
-    "model_name": "vit_large_patch16_224",
+    "model_name": "vit_tiny_patch16_224",
     "n_classes": 1000,
     "n_channels": 3,
     "img_size": 224,
