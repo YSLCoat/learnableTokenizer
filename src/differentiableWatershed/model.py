@@ -3,10 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 import segmentation_models_pytorch as smp
+import math
 
 
 class VoronoiPropagation(nn.Module):
-    def __init__(self, num_clusters=64, height=224, width=224, device='cpu'):
+    def __init__(self, num_clusters=64, n_channels=3, height=224, width=224, device='cpu'):
         """
         Args:
             num_clusters (int): Number of clusters (centroids) to initialize.
@@ -23,8 +24,8 @@ class VoronoiPropagation(nn.Module):
         
         self.unet = smp.Unet(encoder_name="efficientnet-b0",
                              encoder_weights="imagenet",  
-                             in_channels=3,               
-                             classes=3)   
+                             in_channels=n_channels,               
+                             classes=n_channels)   
         
         # Set bandwidth / sigma for kernel
         self.std = self.C / (self.H * self.W)**0.5
@@ -45,47 +46,58 @@ class VoronoiPropagation(nn.Module):
         return grad_map
 
     def place_centroids_on_grid(self, batch_size):
-        num_rows = int(self.C ** 0.5)  # Number of rows of centroids
-        num_cols = int(self.C ** 0.5)  # Number of columns of centroids
-        grid_spacing_y = self.H // num_rows  # Vertical grid spacing
-        grid_spacing_x = self.W // num_cols  # Horizontal grid spacing
-        
+        num_cols = int(math.sqrt(self.C * self.W / self.H))
+        num_rows = int(math.ceil(self.C / num_cols))
+
+        grid_spacing_y = self.H / num_rows
+        grid_spacing_x = self.W / num_cols
+
         centroids = []
         for i in range(num_rows):
             for j in range(num_cols):
-                y = int((i + 0.5) * grid_spacing_y) # Center centroid in the grid
+                if len(centroids) >= self.C:
+                    break
+                y = int((i + 0.5) * grid_spacing_y)
                 x = int((j + 0.5) * grid_spacing_x)
                 centroids.append([y, x])
-        
-        # If we need more centroids, place them in the center of the image
-        while len(centroids) < self.C:
-            centroids.append([self.H // 2, self.W // 2])
+            if len(centroids) >= self.C:
+                break
 
         centroids = torch.tensor(centroids, device=self.device).float()
         return centroids.unsqueeze(0).repeat(batch_size, 1, 1)
 
     def find_nearest_minima(self, centroids, grad_map, neighborhood_size=10):
         updated_centroids = []
-        B, _, _ = centroids.shape  
+        B, _, _ = centroids.shape
         
         for batch_idx in range(B):
             updated_centroids_batch = []
+            occupied_positions = set()
             for centroid in centroids[batch_idx]:
-                y, x = centroid  
-                
-                # Define the search window around the centroid
+                y, x = centroid
                 y_min = max(0, int(y) - neighborhood_size)
                 y_max = min(self.H, int(y) + neighborhood_size)
                 x_min = max(0, int(x) - neighborhood_size)
                 x_max = min(self.W, int(x) + neighborhood_size)
                 
-                # Extract the gradient values in the neighborhood
                 neighborhood = grad_map[batch_idx, 0, y_min:y_max, x_min:x_max]
-                min_coords = torch.nonzero(neighborhood == torch.min(neighborhood), as_tuple=False)[0]
-                new_y = y_min + min_coords[0].item()
-                new_x = x_min + min_coords[1].item()
+                min_val = torch.min(neighborhood)
+                min_coords = torch.nonzero(neighborhood == min_val, as_tuple=False)
                 
-                updated_centroids_batch.append([new_y, new_x])
+                # Iterate over all minima to find an unoccupied one
+                found = False
+                for coord in min_coords:
+                    new_y = y_min + coord[0].item()
+                    new_x = x_min + coord[1].item()
+                    position = (new_y, new_x)
+                    if position not in occupied_positions:
+                        occupied_positions.add(position)
+                        updated_centroids_batch.append([new_y, new_x])
+                        found = True
+                        break
+                if not found:
+                    # If all minima are occupied, keep the original position
+                    updated_centroids_batch.append([y.item(), x.item()])
             
             updated_centroids.append(torch.tensor(updated_centroids_batch, device=self.device))
         
@@ -165,4 +177,4 @@ class VoronoiPropagation(nn.Module):
         # Perform distance-weighted propagation with both gradient and color guidance
         mask = self.distance_weighted_propagation(centroids, grad_map, spixel_features)
         
-        return grad_map, centroids, mask
+        return grad_map, centroids, mask, spixel_features

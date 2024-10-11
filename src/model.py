@@ -14,38 +14,35 @@ class differentiableSuperpixelTokenizer(nn.Module):
         self.max_segments = max_segments
         self.embed_dim = embed_dim
 
-        # CNN backbone to extract feature maps
-        self.cnn = nn.Sequential(
-            nn.Conv2d(n_channels, 64, kernel_size=7, stride=2, padding=3),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.Conv2d(64, embed_dim, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(embed_dim),
-            nn.ReLU(),
-        )
-
         # Linear layer to project centroid coordinates to positional embeddings
         self.positional_embedding = nn.Linear(2, embed_dim)
+    
+        self.feature_proj = nn.Sequential(
+            nn.Conv2d(n_channels, self.embed_dim, kernel_size=1, bias=False),
+            nn.ReLU(inplace=True)
+        )
+        
+        self.layer_norm = nn.LayerNorm(embed_dim)
 
     def forward(self, img):
-        # Get the superpixel segments and centroid coordinates from the tokenizer
-        gradient_map, centroid_coords, segments = self.superpixel_tokenizer(img)  # segments: [B, H, W]; centroid_coords: [B, n_centroids, 2]
+        # Get the superpixel segments, centroid coordinates, and U-Net features from the tokenizer
+        gradient_map, centroid_coords, segments, unet_features = self.superpixel_tokenizer(img)
 
         batch_size, n_channels, height, width = img.shape
 
-        # Process the image with CNN to get feature maps
-        features = self.cnn(img)  # features: [B, C, Hf, Wf]
+        features = unet_features  # features: [B, C_out, H, W]
         B, C, Hf, Wf = features.shape
 
-        # Downsample segments to match feature map size
-        segments = F.interpolate(segments.unsqueeze(1).float(), size=(Hf, Wf), mode='nearest').squeeze(1).long()
-        # segments: [B, Hf, Wf]
+        features = self.feature_proj(features)
+
+        # Downsample segments to match feature map size if necessary
+        if (Hf, Wf) != segments.shape[1:]:
+            segments = F.interpolate(segments.unsqueeze(1).float(), size=(Hf, Wf), mode='nearest').squeeze(1).long()
 
         # Flatten features and segments
-        features_flat = features.permute(0, 2, 3, 1).reshape(-1, C)  # [B * Hf * Wf, embed_dim]
+        features_flat = features.permute(0, 2, 3, 1).reshape(-1, self.embed_dim)  # [B * Hf * Wf, embed_dim]
         segments_flat = segments.view(-1)  # [B * Hf * Wf]
 
-        # Create batch indices
         batch_indices = torch.arange(B, device=img.device).unsqueeze(1).expand(B, Hf * Wf).reshape(-1)
 
         # Compute unique segment IDs per batch
@@ -54,7 +51,7 @@ class differentiableSuperpixelTokenizer(nn.Module):
         # Compute per-segment embeddings using scatter_mean
         dim_size = B * self.max_segments
         embeddings = scatter_mean(features_flat, unique_segment_ids, dim=0, dim_size=dim_size)
-        embeddings = embeddings.view(B, self.max_segments, C)  # [B, max_segments, embed_dim]
+        embeddings = embeddings.view(B, self.max_segments, self.embed_dim) 
 
         # Ensure centroids_normalized is a float tensor
         centroids_normalized = centroid_coords.clone().float()  # Convert to float
@@ -71,15 +68,14 @@ class differentiableSuperpixelTokenizer(nn.Module):
         n_centroids = centroids_normalized.shape[1]
         max_segments = self.max_segments
         if n_centroids > max_segments:
-            # Truncate if necessary
             pos_embeddings_padded = pos_embeddings[:, :max_segments, :]
         else:
             pos_embeddings_padded[:, :n_centroids, :] = pos_embeddings
 
         # Combine embeddings with positional embeddings
         embeddings = embeddings + pos_embeddings_padded
-
-        # Return embeddings without attention mask
+        embeddings = self.layer_norm(embeddings)
+        
         return embeddings  # Shape: [B, max_segments, embed_dim]
 
         

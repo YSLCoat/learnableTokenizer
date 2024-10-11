@@ -72,6 +72,7 @@ class Trainer:
         output = self.model(source)
         loss = torch.nn.CrossEntropyLoss()(output, targets)
         loss.backward()
+        nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optimizer.step()
         
         return loss.item(), output.argmax(dim=1)
@@ -151,7 +152,8 @@ def prepare_datasets(args):
     # Define the postprocessing transformations
     postprocess = (
         transforms.Compose([
-            transforms.Resize((args.img_size, args.img_size)),
+            transforms.RandomResizedCrop(args.img_size),  # Random Resized Crop
+            transforms.RandomHorizontalFlip(),
             rand_aug,
             transforms.ToTensor(),
             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
