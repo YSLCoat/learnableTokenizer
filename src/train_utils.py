@@ -20,7 +20,7 @@ from utils import load_model_from_state_dict, get_available_gpus
 def ddp_setup(rank, world_size):
     get_available_gpus()
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12355"
+    os.environ["MASTER_PORT"] = "12359"
     init_process_group(backend="nccl", rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
 
