@@ -21,7 +21,7 @@ def ddp_setup(rank, world_size):
     get_available_gpus()
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "12359"
-    init_process_group(backend="nccl", rank=rank, world_size=world_size)
+    init_process_group(backend="gloo", rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
 
 class Trainer:
@@ -32,6 +32,7 @@ class Trainer:
         train_data: DataLoader,
         val_data: DataLoader,
         optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler._LRScheduler,  # Add this parameter
         gpu_id: int,
         save_every: int,
     ) -> None:
@@ -40,6 +41,7 @@ class Trainer:
         self.train_data = train_data
         self.val_data = val_data
         self.optimizer = optimizer
+        self.scheduler = scheduler
         self.save_every = save_every
         self.mixup_augmentation = mixup_augmentation(args.n_classes)
         
@@ -47,7 +49,6 @@ class Trainer:
             self.model = load_model_from_state_dict(self.model, args.pretrained_model_path)
         
         self.model = DDP(self.model, device_ids=[self.gpu_id], find_unused_parameters=True)
-
         
         self.results = {
             "train_loss": [],
@@ -60,22 +61,23 @@ class Trainer:
         if train:
             self.model.train()  # Set the model to training mode
             self.optimizer.zero_grad()
+            
+            source, targets = self.mixup_augmentation(source, targets)
+            
+            output = self.model(source)
+            loss = torch.nn.CrossEntropyLoss()(output, targets)
+            loss.backward()
+            nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+            self.optimizer.step()
+            self.scheduler.step()
+            
+            return loss.item(), output.argmax(dim=1)
         else:
             self.model.eval()  # Set the model to evaluation mode
             with torch.no_grad():
                 output = self.model(source)
                 loss = torch.nn.CrossEntropyLoss()(output, targets)
                 return loss.item(), output.argmax(dim=1)
-
-        source, targets = self.mixup_augmentation(source, targets)
-        
-        output = self.model(source)
-        loss = torch.nn.CrossEntropyLoss()(output, targets)
-        loss.backward()
-        nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-        self.optimizer.step()
-        
-        return loss.item(), output.argmax(dim=1)
 
     def _run_epoch(self, epoch):
         b_sz = len(next(iter(self.train_data))[0])

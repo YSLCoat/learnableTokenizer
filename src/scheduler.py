@@ -1,61 +1,85 @@
-import torch
-from torch.optim.lr_scheduler import _LRScheduler, SequentialLR, CosineAnnealingLR
+"""_summary_
+Written by Marius Aasan
+"""
 
-class LinearWarmupScheduler(_LRScheduler):
-    def __init__(self, optimizer, lr_start, lr_stop, epochs, last_epoch=-1):
-        assert 0 <= lr_start, "lr_start must be non-negative"
-        assert 0 <= lr_stop, "lr_stop must be non-negative"
+import warnings
+import torch.optim.lr_scheduler as lrsched
+import numpy as np
+
+from typing import Optional
+from torch.optim import Optimizer
+
+
+class CosineDecay(lrsched._LRScheduler):
+
+    '''Cosine LR decay with sinusoidal warmup.
+    '''
+    
+    def __init__(
+        self, optimizer:Optimizer, lr_start:float, lr_stop:float, epochs:int, 
+        warmup_ratio:float, batch_size:Optional[int]=None, 
+        n_samples:Optional[int]=None, last_epoch:int=-1, verbose:bool=False
+    ):
+        '''Initializes scheduler.
+
+        Args:
+            optimizer (Optimizer): Wrapped optimizer
+            lr_start (float): Start learning rate.
+            lr_stop (float): Stop learning rate.
+            epochs (int): Length of decay schedule in epochs.
+            warmup_ratio (float): Ratio of epochs to be used for warmup.
+            batch_size (int): Number of samples per batch/step.
+            n_samples (int): Total number of samples per epoch.
+            last_epoch (int): Last epoch for continuation, standard from PyTorch. Default: -1
+            verbose (bool): If True, prints a message to stdout for each update. Default: False.        
+        '''
+        assert 0 <= lr_start
+        assert 0 <= lr_stop
         self.lr_start = lr_start
         self.lr_stop = lr_stop
         self.epochs = epochs
-        super(LinearWarmupScheduler, self).__init__(optimizer, last_epoch)
+        self.warmup_ratio = warmup_ratio
+        self.optimizer = optimizer
 
-    def get_lr(self):
-        if self.last_epoch < self.epochs:
-            alpha = self.last_epoch / self.epochs
-            return [self.lr_start + alpha * (self.lr_stop - self.lr_start) for _ in self.base_lrs]
+        # For batchwise steps
+        if n_samples is not None and batch_size is not None:
+            self._epochsteps = -(-n_samples//batch_size)
+
+        # For epochwise steps
         else:
-            return [self.lr_stop for _ in self.base_lrs]
+            self._epochsteps = 1
+
+        super().__init__(optimizer, last_epoch, verbose=verbose)
         
-
-def CosineAnnealingLR_LinearWarmup(optimizer, n_warmup_epochs, warmup_lr_start, warmup_lr_stop, T_max=20, eta_min=0.00001, last_epoch=-1):
-    # Create the linear warmup scheduler
-    linear_warmup_scheduler = LinearWarmupScheduler(optimizer, warmup_lr_start, warmup_lr_stop, n_warmup_epochs)
-    
-    # Create the cosine annealing scheduler
-    cosine_annealing_scheduler = CosineAnnealingLR(optimizer, T_max=T_max, eta_min=eta_min)
-
-    # Combine the schedulers using SequentialLR
-    scheduler = SequentialLR(optimizer, schedulers=[linear_warmup_scheduler, cosine_annealing_scheduler], milestones=[n_warmup_epochs])
-    
-    return scheduler
-
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-    from utils import calculate_warmup_epochs
-    
-    def plot_lr_scheduler(scheduler, num_epochs=30):
-        lrs = []
-        for epoch in range(num_epochs):
-            scheduler.step()
-            lr = scheduler.get_last_lr()[0]
-            lrs.append(lr)
-
-        plt.plot(range(num_epochs), lrs)
-        plt.xlabel('Epoch')
-        plt.ylabel('Learning Rate')
-        plt.title('Learning Rate Schedule')
-        plt.show()
         
-    # Example usage
-    optimizer = torch.optim.SGD([torch.randn(3, 3)], lr=0.01)
-    batch_size = 4096
-    n_warmup_epochs = calculate_warmup_epochs(1200000, batch_size, 10000)
-    print(n_warmup_epochs)
-    scheduler = CosineAnnealingLR_LinearWarmup(optimizer, n_warmup_epochs, 0.000001, 0.1)
-
-    # Assuming you have a DataLoader named train_loader
-    # (You should replace this with your actual DataLoader)
-    #train_loader = torch.utils.data.DataLoader(torch.randn(1200000), batch_size=batch_size)
-
-    plot_lr_scheduler(scheduler, 300)
+    def get_lr(self):
+        if not self._get_lr_called_within_step: # type: ignore
+            warnings.warn(
+                "To get the last learning rate computed by the scheduler, "
+                "please use `get_last_lr()`.", UserWarning
+            )
+        
+        t = self.last_epoch / self._epochsteps
+        return [self.F(t, lr_max) for lr_max in self.base_lrs]                
+        
+            
+    def v(self, x):
+        return (np.cos(np.pi*np.clip(x,0,1)) + 1) / 2
+        
+    def u(self, x):
+        d = self.warmup_ratio
+        return (np.cos(np.pi*(np.clip(x,0,d)/d-1)) + 1) / 2
+    
+    def W(self, x, lr_max):
+        diff = (lr_max - self.lr_start)
+        return diff*self.u(x) + self.lr_start
+    
+    def D(self, x, lr_max):
+        d = self.warmup_ratio
+        diff = (1 - self.lr_stop / lr_max)
+        return diff*self.v(np.maximum(x-d,0)/(1-d)) + self.lr_stop/lr_max
+        
+    def F(self, x, lr_max):
+        T = self.epochs
+        x = x/T
+        return self.W(x, lr_max)*self.D(x, lr_max)

@@ -30,16 +30,28 @@ def parse_input_args(input_args):
         help="Name of the data folder"
     )
     parser.add_argument(
-        "--lr_scheduler",
-        default=True,
-        type=bool,
-        help="Whether to use a learning rate scheduler",
+        "--lr_start",
+        default=1e-6, 
+        type=float, 
+        help="Learning rate at end of scheduling"
+    )
+    parser.add_argument(
+        "--lr_stop",
+        default=1e-5, 
+        type=float, 
+        help="Learning rate at end of scheduling"
     )
     parser.add_argument(
         "--lr",
-        default=1e-4, 
+        default=1e-3, 
         type=float, 
-        help="Learning rate"
+        help="Learning rate at end of scheduling"
+    )
+    parser.add_argument(
+        "--lr_scheduler_warmup",
+        default=0.05, 
+        type=float, 
+        help="Warmup ratio for scheduler"
     )
     parser.add_argument(
         "--beta_1", 
