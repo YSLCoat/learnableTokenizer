@@ -33,16 +33,16 @@ def main(rank, world_size, args):
     train_dataloader = prepare_dataloader(train_dataset, args.batch_size)
     val_dataloader = prepare_dataloader(val_dataset, args.batch_size)
     
-    scheduler = CosineDecay(
-        optimizer=optimizer,
-        lr_start=args.lr_start,
-        lr_stop=args.lr_stop,
-        epochs=args.epochs,
-        warmup_ratio=args.lr_scheduler_warmup,
-        batch_size=args.batch_size,
-        n_samples=len(train_dataset),
-        verbose=True
-    )
+    # scheduler = CosineDecay(
+    #     optimizer=optimizer,
+    #     lr_start=args.lr_start,
+    #     lr_stop=args.lr_stop,
+    #     epochs=args.epochs,
+    #     warmup_ratio=args.lr_scheduler_warmup,
+    #     batch_size=args.batch_size,
+    #     n_samples=len(train_dataset),
+    #     verbose=True
+    # )
     
     trainer = Trainer(
         args,
@@ -50,7 +50,7 @@ def main(rank, world_size, args):
         train_dataloader,
         val_dataloader,
         optimizer,
-        scheduler,
+        # scheduler,
         rank,
         args.save_every
     )

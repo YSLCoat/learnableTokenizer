@@ -32,7 +32,7 @@ class Trainer:
         train_data: DataLoader,
         val_data: DataLoader,
         optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler._LRScheduler,  # Add this parameter
+        # scheduler: torch.optim.lr_scheduler._LRScheduler,
         gpu_id: int,
         save_every: int,
     ) -> None:
@@ -41,7 +41,7 @@ class Trainer:
         self.train_data = train_data
         self.val_data = val_data
         self.optimizer = optimizer
-        self.scheduler = scheduler
+        # self.scheduler = scheduler
         self.save_every = save_every
         self.mixup_augmentation = mixup_augmentation(args.n_classes)
         
@@ -69,7 +69,7 @@ class Trainer:
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.optimizer.step()
-            self.scheduler.step()
+            # self.scheduler.step()
             
             return loss.item(), output.argmax(dim=1)
         else:
