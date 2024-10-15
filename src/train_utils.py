@@ -62,7 +62,7 @@ class Trainer:
             self.model.train()  # Set the model to training mode
             self.optimizer.zero_grad()
             
-            source, targets = self.mixup_augmentation(source, targets)
+            # source, targets = self.mixup_augmentation(source, targets)
             
             output = self.model(source)
             loss = torch.nn.CrossEntropyLoss()(output, targets)
@@ -156,7 +156,7 @@ def prepare_datasets(args):
         transforms.Compose([
             transforms.RandomResizedCrop(args.img_size),  # Random Resized Crop
             transforms.RandomHorizontalFlip(),
-            rand_aug,
+            # rand_aug,
             transforms.ToTensor(),
             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
             
