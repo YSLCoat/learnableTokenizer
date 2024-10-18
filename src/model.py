@@ -22,6 +22,15 @@ class differentiableSuperpixelTokenizer(nn.Module):
             nn.ReLU(inplace=True)
         )
         
+        self.cnn = nn.Sequential(
+            nn.Conv2d(n_channels, 64, kernel_size=7, stride=2, padding=3),
+            nn.LayerNorm(64),
+            nn.ReLU(),
+            nn.Conv2d(64, embed_dim, kernel_size=3, stride=2, padding=1),
+            nn.LayerNorm(embed_dim),
+            nn.ReLU(),
+        )
+        
         self.layer_norm = nn.LayerNorm(embed_dim)
 
     def forward(self, img):
@@ -30,10 +39,11 @@ class differentiableSuperpixelTokenizer(nn.Module):
 
         batch_size, n_channels, height, width = img.shape
 
-        features = unet_features  # features: [B, C_out, H, W]
+        #features = unet_features  # features: [B, C_out, H, W]
+        features = self.cnn(img)  # features: [B, C, Hf, Wf]
         B, C, Hf, Wf = features.shape
 
-        features = self.feature_proj(features)
+        #features = self.feature_proj(features)
 
         # Downsample segments to match feature map size if necessary
         if (Hf, Wf) != segments.shape[1:]:
