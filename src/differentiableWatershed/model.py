@@ -177,4 +177,5 @@ class VoronoiPropagation(nn.Module):
         # Perform distance-weighted propagation with both gradient and color guidance
         mask = self.distance_weighted_propagation(centroids, grad_map, spixel_features)
         
-        return grad_map, centroids, mask, spixel_features
+        # return grad_map, centroids, mask, spixel_features
+        return grad_map, centroids, mask

@@ -31,11 +31,13 @@ class differentiableSuperpixelTokenizer(nn.Module):
             nn.ReLU(),
         )
         
-        self.layer_norm = nn.LayerNorm(embed_dim)
+        # self.layer_norm = nn.LayerNorm(embed_dim)
 
     def forward(self, img):
         # Get the superpixel segments, centroid coordinates, and U-Net features from the tokenizer
-        gradient_map, centroid_coords, segments, unet_features = self.superpixel_tokenizer(img)
+        #gradient_map, centroid_coords, segments, unet_features = self.superpixel_tokenizer(img)
+        
+        gradient_map, centroid_coords, segments= self.superpixel_tokenizer(img)
 
         batch_size, n_channels, height, width = img.shape
 
@@ -84,7 +86,7 @@ class differentiableSuperpixelTokenizer(nn.Module):
 
         # Combine embeddings with positional embeddings
         embeddings = embeddings + pos_embeddings_padded
-        embeddings = self.layer_norm(embeddings)
+        #embeddings = self.layer_norm(embeddings)
         
         return embeddings  # Shape: [B, max_segments, embed_dim]
 
