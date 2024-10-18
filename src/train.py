@@ -19,7 +19,7 @@ def main(rank, world_size, args):
     model = differentiableTokenizerVisionTransformer(
         args.model_name, args.n_segments, args.n_classes, args.n_channels
     )
-    summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
+    #summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
     
     optimizer = AdamW(
         model.parameters(),

@@ -24,10 +24,10 @@ class differentiableSuperpixelTokenizer(nn.Module):
         
         self.cnn = nn.Sequential(
             nn.Conv2d(n_channels, 64, kernel_size=7, stride=2, padding=3),
-            nn.LayerNorm(64),
+            nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.Conv2d(64, embed_dim, kernel_size=3, stride=2, padding=1),
-            nn.LayerNorm(embed_dim),
+            nn.BatchNorm2d(embed_dim),
             nn.ReLU(),
         )
         
