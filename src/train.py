@@ -8,6 +8,7 @@ import torch.multiprocessing as mp
 from scheduler import CosineDecay
 
 from train_utils import *
+from utils import get_available_gpus
 from input_parser import parse_input_args
 from torch.distributed import destroy_process_group
 
@@ -19,7 +20,9 @@ def main(rank, world_size, args):
     model = differentiableTokenizerVisionTransformer(
         args.model_name, args.n_segments, args.n_classes, args.n_channels
     )
-    #summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
+    
+    if rank==0:
+        summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
     
     optimizer = AdamW(
         model.parameters(),
