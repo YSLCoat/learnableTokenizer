@@ -23,7 +23,7 @@ class VoronoiPropagation(nn.Module):
         self.device = torch.device(device)
         
         self.unet = smp.Unet(encoder_name="efficientnet-b0",
-                             encoder_weights="imagenet",  
+                             encoder_weights=None,  
                              in_channels=n_channels,               
                              classes=n_channels)   
         
@@ -178,4 +178,4 @@ class VoronoiPropagation(nn.Module):
         mask = self.distance_weighted_propagation(centroids, grad_map, spixel_features)
         
         # return grad_map, centroids, mask, spixel_features
-        return grad_map, centroids, mask
+        return grad_map, centroids, mask, spixel_features

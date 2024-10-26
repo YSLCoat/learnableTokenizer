@@ -14,11 +14,10 @@ from tqdm import tqdm
 import time
 from datetime import timedelta
 import quixdata
-from utils import load_model_from_state_dict, get_available_gpus
+from utils import load_model_from_state_dict
 
 
 def ddp_setup(rank, world_size):
-    get_available_gpus()
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "12359"
     init_process_group(backend="nccl", rank=rank, world_size=world_size)
@@ -155,7 +154,7 @@ def prepare_datasets(args):
     postprocess = (
         transforms.Compose([
             transforms.RandomResizedCrop(args.img_size),  # Random Resized Crop
-            transforms.RandomHorizontalFlip(),
+            #transforms.RandomHorizontalFlip(),
             # rand_aug,
             transforms.ToTensor(),
             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),

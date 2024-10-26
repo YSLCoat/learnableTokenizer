@@ -59,5 +59,6 @@ def main(rank, world_size, args):
     destroy_process_group()
 
 if __name__ == '__main__':
+    get_available_gpus()
     world_size = torch.cuda.device_count()
     mp.spawn(main, args=(world_size, sys.argv[1:]), nprocs=world_size)

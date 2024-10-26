@@ -276,5 +276,40 @@ def load_model_from_state_dict(model, state_dict_path):
     model.load_state_dict(state_dict)
     
     return model
+
+
+def verify_gradient_flow(model):
+    device = model.device
+    num_classes = 1000
+    batch_size = 2
+    height = 224
+    width = 224
+    dummy_input = torch.randn(batch_size, 3, height, width, device=device)
+
+    output = model(dummy_input)
+    print("Output shape:", output.shape)  # Expected: [batch_size, num_classes]
+
+    target = torch.randint(0, num_classes, (batch_size,), device=device)
+    criterion = nn.CrossEntropyLoss()
+    loss = criterion(output, target)
+    
+    loss.backward()
+
+    print("\nGradient check:")
+    all_have_grad = True
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            if param.grad is None:
+                print(f"No gradient for parameter: {name}")
+                all_have_grad = False
+            else:
+                print(f"Gradient OK for parameter: {name}")
+        else:
+            print(f"Parameter does not require grad: {name}")
+
+    if all_have_grad:
+        print("\nAll parameters have gradients. Gradient flow is verified.")
+    else:
+        print("\nSome parameters do not have gradients. There may be an issue with gradient flow.")
         
         

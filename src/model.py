@@ -22,30 +22,18 @@ class differentiableSuperpixelTokenizer(nn.Module):
             nn.ReLU(inplace=True)
         )
         
-        self.cnn = nn.Sequential(
-            nn.Conv2d(n_channels, 64, kernel_size=7, stride=2, padding=3),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.Conv2d(64, embed_dim, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(embed_dim),
-            nn.ReLU(),
-        )
-        
-        # self.layer_norm = nn.LayerNorm(embed_dim)
+        self.layer_norm = nn.LayerNorm(embed_dim)
 
     def forward(self, img):
         # Get the superpixel segments, centroid coordinates, and U-Net features from the tokenizer
-        #gradient_map, centroid_coords, segments, unet_features = self.superpixel_tokenizer(img)
-        
-        gradient_map, centroid_coords, segments= self.superpixel_tokenizer(img)
+        gradient_map, centroid_coords, segments, unet_features = self.superpixel_tokenizer(img)
 
         batch_size, n_channels, height, width = img.shape
 
-        #features = unet_features  # features: [B, C_out, H, W]
-        features = self.cnn(img)  # features: [B, C, Hf, Wf]
+        features = unet_features  # features: [B, C_out, H, W]
         B, C, Hf, Wf = features.shape
 
-        #features = self.feature_proj(features)
+        features = self.feature_proj(features)
 
         # Downsample segments to match feature map size if necessary
         if (Hf, Wf) != segments.shape[1:]:
@@ -86,7 +74,7 @@ class differentiableSuperpixelTokenizer(nn.Module):
 
         # Combine embeddings with positional embeddings
         embeddings = embeddings + pos_embeddings_padded
-        #embeddings = self.layer_norm(embeddings)
+        embeddings = self.layer_norm(embeddings)
         
         return embeddings  # Shape: [B, max_segments, embed_dim]
 
@@ -136,3 +124,4 @@ class differentiableTokenizerVisionTransformer(nn.Module):
         x = self.forward_features(x)
         x = self.vit.forward_head(x, pre_logits=False)
         return x
+    
