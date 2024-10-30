@@ -6,6 +6,83 @@ import segmentation_models_pytorch as smp
 import math
 
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class ConvBlock(nn.Module):
+    """Convolutional Block with optional depthwise separable convolution."""
+    def __init__(self, in_channels, out_channels, use_dw_conv=False):
+        super(ConvBlock, self).__init__()
+        if use_dw_conv:
+            self.conv = nn.Sequential(
+                nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1, groups=in_channels),
+                nn.Conv2d(in_channels, out_channels, kernel_size=1),
+                nn.ReLU(inplace=True)
+            )
+        else:
+            self.conv = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+                nn.ReLU(inplace=True)
+            )
+    
+    def forward(self, x):
+        return self.conv(x)
+
+class LightweightUNet(nn.Module):
+    def __init__(self, in_channels=3, out_channels=3, base_filters=32, depth=3, use_dw_conv=False):
+        super(LightweightUNet, self).__init__()
+        self.depth = depth
+        self.down_convs = []
+        self.up_convs = []
+        filters = base_filters
+
+        # Encoder
+        for i in range(depth):
+            conv = ConvBlock(in_channels, filters, use_dw_conv)
+            self.down_convs.append(conv)
+            in_channels = filters
+            filters *= 2
+
+        self.mid_conv = ConvBlock(in_channels, filters, use_dw_conv)
+
+        # Decoder
+        filters = filters // 2
+        for i in range(depth):
+            up_conv = nn.ConvTranspose2d(filters * 2, filters, kernel_size=2, stride=2)
+            conv = ConvBlock(filters * 2, filters, use_dw_conv)
+            self.up_convs.append((up_conv, conv))
+            filters = filters // 2
+
+        self.final_conv = nn.Conv2d(base_filters, out_channels, kernel_size=1)
+
+        # Convert lists to ModuleList
+        self.down_convs = nn.ModuleList(self.down_convs)
+        self.up_convs = nn.ModuleList([nn.ModuleList(u) for u in self.up_convs])
+
+    def forward(self, x):
+        encoder_outputs = []
+
+        # Encoder path
+        for conv in self.down_convs:
+            x = conv(x)
+            encoder_outputs.append(x)
+            x = F.max_pool2d(x, 2)
+
+        x = self.mid_conv(x)
+
+        # Decoder path
+        for i in range(self.depth):
+            up_conv, conv = self.up_convs[i]
+            x = up_conv(x)
+            enc_out = encoder_outputs[-(i + 1)]
+            x = torch.cat([x, enc_out], dim=1)
+            x = conv(x)
+
+        x = self.final_conv(x)
+        return x
+
+
 class VoronoiPropagation(nn.Module):
     def __init__(self, num_clusters=64, n_channels=3, height=224, width=224, device='cpu'):
         """
@@ -22,10 +99,13 @@ class VoronoiPropagation(nn.Module):
         self.W = width
         self.device = torch.device(device)
         
-        self.unet = smp.Unet(encoder_name="efficientnet-b0",
-                             encoder_weights=None,  
-                             in_channels=n_channels,               
-                             classes=n_channels)   
+        self.unet = LightweightUNet(
+            in_channels=n_channels,
+            out_channels=n_channels,
+            base_filters=16,   # Adjust as needed
+            depth=2,           # Adjust as needed
+            use_dw_conv=True   # Use depthwise separable convolutions
+        )
         
         # Set bandwidth / sigma for kernel
         self.std = self.C / (self.H * self.W)**0.5
