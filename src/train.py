@@ -21,8 +21,8 @@ def main(rank, world_size, args):
         args.model_name, args.n_segments, args.n_classes, args.n_channels
     )
     
-    if rank==0:
-        summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
+    # if rank==0:
+    #     summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
     
     optimizer = AdamW(
         model.parameters(),
@@ -36,16 +36,6 @@ def main(rank, world_size, args):
     train_dataloader = prepare_dataloader(train_dataset, args.batch_size)
     val_dataloader = prepare_dataloader(val_dataset, args.batch_size)
     
-    # scheduler = CosineDecay(
-    #     optimizer=optimizer,
-    #     lr_start=args.lr_start,
-    #     lr_stop=args.lr_stop,
-    #     epochs=args.epochs,
-    #     warmup_ratio=args.lr_scheduler_warmup,
-    #     batch_size=args.batch_size,
-    #     n_samples=len(train_dataset),
-    #     verbose=True
-    # )
     
     trainer = Trainer(
         args,
@@ -53,7 +43,6 @@ def main(rank, world_size, args):
         train_dataloader,
         val_dataloader,
         optimizer,
-        # scheduler,
         rank,
         args.save_every
     )

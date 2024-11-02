@@ -14,8 +14,11 @@ class differentiableSuperpixelTokenizer(nn.Module):
         self.max_segments = max_segments
         self.embed_dim = embed_dim
 
-        # Linear layer to project centroid coordinates to positional embeddings
-        self.positional_embedding = nn.Linear(2, embed_dim)
+        # Learnable 2D positional embedding grid
+        self.pos_embedding_grid = nn.Parameter(
+            torch.zeros(1, embed_dim, int(torch.sqrt(torch.tensor(max_segments)).item()), int(torch.sqrt(torch.tensor(max_segments)).item()))
+        )
+        nn.init.trunc_normal_(self.pos_embedding_grid, std=0.02)
     
         self.feature_proj = nn.Sequential(
             nn.Conv2d(n_channels, self.embed_dim, kernel_size=1, bias=False),
@@ -51,31 +54,30 @@ class differentiableSuperpixelTokenizer(nn.Module):
         # Compute per-segment embeddings using scatter_mean
         dim_size = B * self.max_segments
         embeddings = scatter_mean(features_flat, unique_segment_ids, dim=0, dim_size=dim_size)
-        embeddings = embeddings.view(B, self.max_segments, self.embed_dim) 
+        embeddings = embeddings.view(B, self.max_segments, self.embed_dim)
 
-        # Ensure centroids_normalized is a float tensor
-        centroids_normalized = centroid_coords.clone().float()  # Convert to float
+        # Prepare centroid coordinates for sampling positional embeddings
+        centroids_normalized = centroid_coords.clone().float()
+        centroids_normalized[:, :, 0] = 2.0 * (centroids_normalized[:, :, 0] / (height - 1)) - 1.0  # y-coordinate normalization
+        centroids_normalized[:, :, 1] = 2.0 * (centroids_normalized[:, :, 1] / (width - 1)) - 1.0   # x-coordinate normalization
 
-        # Normalize centroid coordinates
-        centroids_normalized[:, :, 0] /= float(width)   # x-coordinate normalization
-        centroids_normalized[:, :, 1] /= float(height)  # y-coordinate normalization
+        # Create a grid for grid_sample
+        centroids_grid = centroids_normalized.unsqueeze(2)  # Shape: [B, max_segments, 1, 2]
+        centroids_grid = centroids_grid[..., [1, 0]]  # Swap x and y to match grid_sample ordering
 
-        # Project centroid coordinates to positional embeddings
-        pos_embeddings = self.positional_embedding(centroids_normalized.to(img.device))  # [B, n_centroids, embed_dim]
+        # Sample positional embeddings from the grid
+        pos_embeddings = F.grid_sample(
+            self.pos_embedding_grid.expand(B, -1, -1, -1).to(img.device),  # Shape: [B, embed_dim, grid_size, grid_size]
+            centroids_grid.to(img.device),  # Corrected shape: [B, max_segments, 1, 2]
+            mode='bilinear',
+            align_corners=True
+        ).squeeze(3).transpose(1, 2)  # Shape after squeeze and transpose: [B, max_segments, embed_dim]
 
-        # Pad pos_embeddings to match max_segments
-        pos_embeddings_padded = torch.zeros(B, self.max_segments, self.embed_dim, device=img.device)
-        n_centroids = centroids_normalized.shape[1]
-        max_segments = self.max_segments
-        if n_centroids > max_segments:
-            pos_embeddings_padded = pos_embeddings[:, :max_segments, :]
-        else:
-            pos_embeddings_padded[:, :n_centroids, :] = pos_embeddings
 
         # Combine embeddings with positional embeddings
-        embeddings = embeddings + pos_embeddings_padded
+        embeddings = embeddings + pos_embeddings
         embeddings = self.layer_norm(embeddings)
-        
+
         return embeddings  # Shape: [B, max_segments, embed_dim]
 
         
@@ -85,6 +87,7 @@ class differentiableTokenizerVisionTransformer(nn.Module):
         super().__init__()
         self.vit = timm.create_model(model_name, pretrained=pretrained, num_classes=num_classes)
         self.embed_dim = self.vit.embed_dim
+        self.max_segments = max_segments
 
         # Replace the patch embedding with the superpixel tokenizer
         self.vit.patch_embed = differentiableSuperpixelTokenizer(
@@ -93,21 +96,28 @@ class differentiableTokenizerVisionTransformer(nn.Module):
             embed_dim=self.embed_dim
         )
 
-        # Remove positional embeddings from the ViT
-        self.vit.pos_embed = None  # Positional embeddings are added in the tokenizer
+        # Update positional embeddings to match the new number of tokens
+        self.vit.pos_embed = nn.Parameter(
+            torch.zeros(1, max_segments + 1, self.embed_dim)
+        )
+        nn.init.trunc_normal_(self.vit.pos_embed, std=0.02)
+
         self.vit.num_tokens = max_segments + 1  # Update the number of tokens
 
-        # Optionally, add positional embedding for the CLS token
-        self.cls_positional_embedding = nn.Parameter(torch.randn(1, 1, self.embed_dim) * 0.02)
+        # Remove the CLS positional embedding if it exists
+        if hasattr(self.vit, 'cls_positional_embedding'):
+            del self.vit.cls_positional_embedding
 
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:
         embeddings = self.vit.patch_embed(x)  # [B, max_segments, embed_dim]
         b, n, d = embeddings.shape
 
         cls_tokens = self.vit.cls_token.expand(b, -1, -1)  # [B, 1, D]
-        cls_tokens = cls_tokens + self.cls_positional_embedding  # Add positional embedding to CLS token
 
         x = torch.cat((cls_tokens, embeddings), dim=1)  # [B, n+1, D]
+
+        # Add positional embeddings
+        x = x + self.vit.pos_embed
 
         x = self.vit.pos_drop(x)
         x = self.vit.norm_pre(x)
@@ -124,4 +134,5 @@ class differentiableTokenizerVisionTransformer(nn.Module):
         x = self.forward_features(x)
         x = self.vit.forward_head(x, pre_logits=False)
         return x
+
     
