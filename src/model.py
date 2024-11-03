@@ -6,6 +6,7 @@ from torch_scatter import scatter_mean
 
 from timm.models._manipulate import checkpoint_seq
 from differentiableWatershed.model import VoronoiPropagation
+import math
 
 class differentiableSuperpixelTokenizer(nn.Module):
     def __init__(self, max_segments, n_channels=3, embed_dim=768):
@@ -26,6 +27,36 @@ class differentiableSuperpixelTokenizer(nn.Module):
         )
         
         self.layer_norm = nn.LayerNorm(embed_dim)
+        
+    def get_2d_sinusoidal_pos_embed(self, coords, num_pos_feats):
+        """
+        Generate 2D sinusoidal positional embeddings for the given coordinates.
+
+        Args:
+            coords (Tensor): Coordinates of shape [B, max_segments, 2], with values in [0, 1].
+            num_pos_feats (int): Dimension of the positional embeddings.
+
+        Returns:
+            pos_embed (Tensor): Positional embeddings of shape [B, max_segments, embed_dim].
+        """
+        assert num_pos_feats % 2 == 0, "num_pos_feats should be even"
+
+        # Scale coordinates to [0, 2π]
+        coords = coords * 2 * math.pi  # [B, max_segments, 2]
+
+        dim_t = torch.arange(num_pos_feats // 2, dtype=coords.dtype, device=coords.device)
+        dim_t = 10000 ** (2 * (dim_t // 2) / num_pos_feats)  # [num_pos_feats // 2]
+
+        # Compute the positional embeddings
+        pos_x = coords[..., 0].unsqueeze(-1) / dim_t  # [B, max_segments, num_pos_feats // 2]
+        pos_y = coords[..., 1].unsqueeze(-1) / dim_t
+
+        pos_x = torch.stack((pos_x.sin(), pos_x.cos()), dim=-1).flatten(-2)  # [B, max_segments, num_pos_feats]
+        pos_y = torch.stack((pos_y.sin(), pos_y.cos()), dim=-1).flatten(-2)
+
+        pos_embed = torch.cat((pos_y, pos_x), dim=-1)  # [B, max_segments, embed_dim]
+        return pos_embed.to(coords.device)
+
 
     def forward(self, img):
         # Get the superpixel segments, centroid coordinates, and U-Net features from the tokenizer
@@ -56,23 +87,13 @@ class differentiableSuperpixelTokenizer(nn.Module):
         embeddings = scatter_mean(features_flat, unique_segment_ids, dim=0, dim_size=dim_size)
         embeddings = embeddings.view(B, self.max_segments, self.embed_dim)
 
-        # Prepare centroid coordinates for sampling positional embeddings
-        centroids_normalized = centroid_coords.clone().float()
-        centroids_normalized[:, :, 0] = 2.0 * (centroids_normalized[:, :, 0] / (height - 1)) - 1.0  # y-coordinate normalization
-        centroids_normalized[:, :, 1] = 2.0 * (centroids_normalized[:, :, 1] / (width - 1)) - 1.0   # x-coordinate normalization
-
-        # Create a grid for grid_sample
-        centroids_grid = centroids_normalized.unsqueeze(2)  # Shape: [B, max_segments, 1, 2]
-        centroids_grid = centroids_grid[..., [1, 0]]  # Swap x and y to match grid_sample ordering
-
-        # Sample positional embeddings from the grid
-        pos_embeddings = F.grid_sample(
-            self.pos_embedding_grid.expand(B, -1, -1, -1).to(img.device),  # Shape: [B, embed_dim, grid_size, grid_size]
-            centroids_grid.to(img.device),  # Corrected shape: [B, max_segments, 1, 2]
-            mode='bilinear',
-            align_corners=True
-        ).squeeze(3).transpose(1, 2)  # Shape after squeeze and transpose: [B, max_segments, embed_dim]
-
+        # Prepare centroid coordinates for positional embeddings
+        centroids_normalized = centroid_coords.clone().float().to(img.device)
+        centroids_normalized[:, :, 0] = centroids_normalized[:, :, 0] / (height - 1)  # y-coordinate normalization to [0, 1]
+        centroids_normalized[:, :, 1] = centroids_normalized[:, :, 1] / (width - 1)   # x-coordinate normalization to [0, 1]
+        
+        # Compute sinusoidal positional embeddings
+        pos_embeddings = self.get_2d_sinusoidal_pos_embed(centroids_normalized, self.embed_dim // 2)
 
         # Combine embeddings with positional embeddings
         embeddings = embeddings + pos_embeddings
@@ -88,6 +109,10 @@ class differentiableTokenizerVisionTransformer(nn.Module):
         self.vit = timm.create_model(model_name, pretrained=pretrained, num_classes=num_classes)
         self.embed_dim = self.vit.embed_dim
         self.max_segments = max_segments
+        
+        # self.vit.drop_rate = 0.1  
+        # self.vit.attn_drop_rate = 0.1  
+        # self.vit.drop_path_rate = 0.1  
 
         # Replace the patch embedding with the superpixel tokenizer
         self.vit.patch_embed = differentiableSuperpixelTokenizer(
