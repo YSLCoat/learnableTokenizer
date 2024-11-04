@@ -22,6 +22,10 @@ class differentiableSuperpixelTokenizer(nn.Module):
     
         self.feature_proj = nn.Sequential(
             nn.Conv2d(n_channels, self.embed_dim, kernel_size=1, bias=False),
+            nn.BatchNorm2d(self.embed_dim),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(self.embed_dim, self.embed_dim, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(self.embed_dim),
             nn.ReLU(inplace=True)
         )
         
@@ -100,17 +104,7 @@ class differentiableTokenizerVisionTransformer(nn.Module):
             embed_dim=self.embed_dim
         )
 
-        # Update positional embeddings to match the new number of tokens
-        self.vit.pos_embed = nn.Parameter(
-            torch.zeros(1, max_segments + 1, self.embed_dim)
-        )
-        nn.init.trunc_normal_(self.vit.pos_embed, std=0.02)
-
         self.vit.num_tokens = max_segments + 1  # Update the number of tokens
-
-        # Remove the CLS positional embedding if it exists
-        if hasattr(self.vit, 'cls_positional_embedding'):
-            del self.vit.cls_positional_embedding
 
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:
         embeddings = self.vit.patch_embed(x)  # [B, max_segments, embed_dim]
@@ -119,9 +113,6 @@ class differentiableTokenizerVisionTransformer(nn.Module):
         cls_tokens = self.vit.cls_token.expand(b, -1, -1)  # [B, 1, D]
 
         x = torch.cat((cls_tokens, embeddings), dim=1)  # [B, n+1, D]
-
-        # Add positional embeddings
-        x = x + self.vit.pos_embed
 
         x = self.vit.pos_drop(x)
         x = self.vit.norm_pre(x)
