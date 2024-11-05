@@ -15,10 +15,10 @@ class differentiableSuperpixelTokenizer(nn.Module):
         self.embed_dim = embed_dim
 
         # Learnable 2D positional embedding grid
-        # self.pos_embedding_grid = nn.Parameter(
-        #     torch.zeros(1, embed_dim, int(torch.sqrt(torch.tensor(max_segments)).item()), int(torch.sqrt(torch.tensor(max_segments)).item()))
-        # )
-        # nn.init.trunc_normal_(self.pos_embedding_grid, std=0.02)
+        self.pos_embedding_grid = nn.Parameter(
+            torch.zeros(1, embed_dim, int(torch.sqrt(torch.tensor(max_segments)).item()), int(torch.sqrt(torch.tensor(max_segments)).item()))
+        )
+        nn.init.trunc_normal_(self.pos_embedding_grid, std=0.02)
     
         self.feature_proj = nn.Sequential(
             nn.Conv2d(n_channels, self.embed_dim, kernel_size=1, bias=False),
@@ -57,25 +57,25 @@ class differentiableSuperpixelTokenizer(nn.Module):
         embeddings = embeddings.view(B, self.max_segments, self.embed_dim)
 
         # Prepare centroid coordinates for sampling positional embeddings
-        # centroids_normalized = centroid_coords.clone().float()
-        # centroids_normalized[:, :, 0] = 2.0 * (centroids_normalized[:, :, 0] / (height - 1)) - 1.0  # y-coordinate normalization
-        # centroids_normalized[:, :, 1] = 2.0 * (centroids_normalized[:, :, 1] / (width - 1)) - 1.0   # x-coordinate normalization
+        centroids_normalized = centroid_coords.clone().float()
+        centroids_normalized[:, :, 0] = 2.0 * (centroids_normalized[:, :, 0] / (height - 1)) - 1.0  # y-coordinate normalization
+        centroids_normalized[:, :, 1] = 2.0 * (centroids_normalized[:, :, 1] / (width - 1)) - 1.0   # x-coordinate normalization
 
-        # # Create a grid for grid_sample
-        # centroids_grid = centroids_normalized.unsqueeze(2)  # Shape: [B, max_segments, 1, 2]
-        # centroids_grid = centroids_grid[..., [1, 0]]  # Swap x and y to match grid_sample ordering
+        # Create a grid for grid_sample
+        centroids_grid = centroids_normalized.unsqueeze(2)  # Shape: [B, max_segments, 1, 2]
+        centroids_grid = centroids_grid[..., [1, 0]]  # Swap x and y to match grid_sample ordering
 
         # Sample positional embeddings from the grid
-        # pos_embeddings = F.grid_sample(
-        #     self.pos_embedding_grid.expand(B, -1, -1, -1).to(img.device),  # Shape: [B, embed_dim, grid_size, grid_size]
-        #     centroids_grid.to(img.device),  # Corrected shape: [B, max_segments, 1, 2]
-        #     mode='bilinear',
-        #     align_corners=True
-        # ).squeeze(3).transpose(1, 2)  # Shape after squeeze and transpose: [B, max_segments, embed_dim]
+        pos_embeddings = F.grid_sample(
+            self.pos_embedding_grid.expand(B, -1, -1, -1).to(img.device),  # Shape: [B, embed_dim, grid_size, grid_size]
+            centroids_grid.to(img.device),  # Corrected shape: [B, max_segments, 1, 2]
+            mode='bilinear',
+            align_corners=True
+        ).squeeze(3).transpose(1, 2)  # Shape after squeeze and transpose: [B, max_segments, embed_dim]
 
 
         # Combine embeddings with positional embeddings
-        # embeddings = embeddings + pos_embeddings
+        embeddings = embeddings + pos_embeddings
         embeddings = self.layer_norm(embeddings)
 
         return embeddings  # Shape: [B, max_segments, embed_dim]
