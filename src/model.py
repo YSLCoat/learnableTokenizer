@@ -10,7 +10,7 @@ from differentiableWatershed.model import VoronoiPropagation
 class differentiableSuperpixelTokenizer(nn.Module):
     def __init__(self, max_segments, n_channels=3, embed_dim=768):
         super().__init__()
-        self.superpixel_tokenizer = VoronoiPropagation(max_segments)
+        self.superpixel_tokenizer = VoronoiPropagation(max_segments, embed_dim=embed_dim)
         self.max_segments = max_segments
         self.embed_dim = embed_dim
 
@@ -20,10 +20,10 @@ class differentiableSuperpixelTokenizer(nn.Module):
         )
         nn.init.trunc_normal_(self.pos_embedding_grid, std=0.02)
     
-        self.feature_proj = nn.Sequential(
-            nn.Conv2d(n_channels, self.embed_dim, kernel_size=1, bias=False),
-            nn.ReLU(inplace=True)
-        )
+        # self.feature_proj = nn.Sequential(
+        #     nn.Conv2d(n_channels, self.embed_dim, kernel_size=1, bias=False),
+        #     nn.ReLU(inplace=True)
+        # )
         
         self.layer_norm = nn.LayerNorm(embed_dim)
 
@@ -36,7 +36,7 @@ class differentiableSuperpixelTokenizer(nn.Module):
         features = unet_features  # features: [B, C_out, H, W]
         B, C, Hf, Wf = features.shape
 
-        features = self.feature_proj(features)
+        # features = self.feature_proj(features)
 
         # Downsample segments to match feature map size if necessary
         if (Hf, Wf) != segments.shape[1:]:

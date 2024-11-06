@@ -84,7 +84,7 @@ class LightweightUNet(nn.Module):
 
 
 class VoronoiPropagation(nn.Module):
-    def __init__(self, num_clusters=64, n_channels=3, height=224, width=224, device='cpu'):
+    def __init__(self, num_clusters=64, n_channels=3, embed_dim=192, height=224, width=224, device='cpu'):
         """
         Args:
             num_clusters (int): Number of clusters (centroids) to initialize.
@@ -101,7 +101,7 @@ class VoronoiPropagation(nn.Module):
         
         self.unet = LightweightUNet(
             in_channels=n_channels,
-            out_channels=n_channels,
+            out_channels=embed_dim,
             base_filters=16,   # Adjust as needed
             depth=2,           # Adjust as needed
             use_dw_conv=True   # Use depthwise separable convolutions
@@ -222,7 +222,7 @@ class VoronoiPropagation(nn.Module):
                 shifted_mask = torch.roll(mask, shifts=(dy, dx), dims=(1, 2))
                 
                 # Calculate color distance between current pixel and centroid it is being propagated from
-                color_diff = torch.abs(color_map - torch.roll(color_map, shifts=(dy, dx), dims=(2, 3))).sum(dim=1)  # Sum over color channels
+                color_diff = torch.abs(color_map - torch.roll(color_map, shifts=(dy, dx), dims=(2, 3))).mean(dim=1)
 
                 # Add the gradient map value as a weighted penalty to the distance
                 weighted_dist = shifted_dist + weighted_grad_map[:, 0, :, :] + color_diff * color_weight
