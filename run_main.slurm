@@ -2,7 +2,7 @@
 
 #SBATCH --job-name=train-model
 #SBATCH --account=ec232
-#SBATCH --time=100:00:00
+#SBATCH --time=48:00:00
 #SBATCH --partition=ifi_accel    # To use the accelerator nodes
 #SBATCH --gpus=4
 #SBATCH --nodes=1
