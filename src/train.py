@@ -21,8 +21,8 @@ def main(rank, world_size, args):
         args.model_name, args.n_segments, args.n_classes, args.n_channels
     )
     
-    if rank==0:
-        summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
+    # if rank==0:
+    #     summary(model, input_size=(args.batch_size, args.n_channels, args.img_size, args.img_size), depth=4)
     
     optimizer = AdamW(
         model.parameters(),
