@@ -252,10 +252,262 @@ class VoronoiPropagation(nn.Module):
         centroids = self.find_nearest_minima(centroids, grad_map)
         
         # Use the color map (the original image) to guide propagation
-        spixel_features = self.unet(x)
+        # spixel_features = self.unet(x)
         
         # Perform distance-weighted propagation with both gradient and color guidance
-        mask = self.distance_weighted_propagation(centroids, grad_map, spixel_features)
+        mask = self.distance_weighted_propagation(centroids, grad_map, x)
         
         # return grad_map, centroids, mask, spixel_features
-        return grad_map, centroids, mask, spixel_features
+        return grad_map, centroids, mask, x
+    
+    
+class BoundaryPathFinder(nn.Module):
+    def __init__(self, num_segments_row=8, num_segments_col=8, height=224, width=224, device='cpu'):
+        super(BoundaryPathFinder, self).__init__()
+        
+        self.num_segments_row = num_segments_row
+        self.num_segments_col = num_segments_col
+        self.H = height
+        self.W = width
+        self.device = device
+        
+        self.convert_to_grayscale = torchvision.transforms.Grayscale(num_output_channels=1)
+        
+        # Sobel kernels
+        self.sobel_x = torch.tensor([[[[-1, 0, 1], 
+                                  [-2, 0, 2], 
+                                  [-1, 0, 1]]]], device=device, dtype=torch.float32)
+        self.sobel_y = torch.tensor([[[[-1, -2, -1], 
+                                  [0, 0, 0], 
+                                  [1, 2, 1]]]], device=device, dtype=torch.float32)
+        
+        # Move offsets for dynamic programming
+        self.move_offsets = torch.tensor([-1, 0, 1], device=device)
+    
+    def compute_gradient_map(self, x):
+        # x: (B, C, H, W)
+        if x.shape[1] == 3:
+            x = self.convert_to_grayscale(x)
+        
+        # Apply Sobel filters
+        grad_x = F.conv2d(x, self.sobel_x, padding=1)
+        grad_y = F.conv2d(x, self.sobel_y, padding=1)
+
+        # Compute gradient magnitude
+        grad_map = torch.sqrt(grad_x ** 2 + grad_y ** 2 + 1e-8)
+        return grad_map  # Shape: (B, 1, H, W)
+    
+    def initialize_grid(self, batch_size):
+        # Create grid labels
+        rows = torch.arange(self.H, device=self.device).unsqueeze(1)
+        cols = torch.arange(self.W, device=self.device).unsqueeze(0)
+
+        row_labels = rows // (self.H // self.num_segments_row)
+        col_labels = cols // (self.W // self.num_segments_col)
+
+        labels = (row_labels * self.num_segments_col + col_labels).to(torch.int32)
+        labels = labels.expand(batch_size, -1, -1)  # Shape: (B, H, W)
+
+        return labels
+    
+    def adjust_boundaries(self, grad_map, segmentation_mask, band_width=5):
+        """
+        Adjust boundary lines to align with the highest gradients while keeping the number of segments constant.
+        """
+        B, H, W = segmentation_mask.shape
+        device = grad_map.device
+
+        # Prepare indices
+        y_indices = torch.arange(H, device=device)
+        x_indices = torch.arange(W, device=device)
+
+        # Initialize boundary masks
+        boundary_masks_vertical = torch.zeros((B, H, W), dtype=torch.bool, device=device)
+        boundary_masks_horizontal = torch.zeros((B, H, W), dtype=torch.bool, device=device)
+
+        # Vertical boundaries
+        x_inits = torch.tensor([i * (W // self.num_segments_col) for i in range(1, self.num_segments_col)], device=device).clamp(0, W - 1)
+        num_vertical_paths = x_inits.size(0)
+        for b in range(B):
+            grad_map_b = grad_map[b, 0]  # Shape: (H, W)
+            vertical_paths = self.find_optimal_vertical_paths(grad_map_b, x_inits, band_width)  # Shape: (num_vertical_paths, H)
+            # Mark vertical boundaries
+            for i in range(num_vertical_paths):
+                boundary_masks_vertical[b, y_indices, vertical_paths[i]] = True
+
+        # Horizontal boundaries
+        y_inits = torch.tensor([i * (H // self.num_segments_row) for i in range(1, self.num_segments_row)], device=device).clamp(0, H - 1)
+        num_horizontal_paths = y_inits.size(0)
+        for b in range(B):
+            grad_map_b = grad_map[b, 0]  # Shape: (H, W)
+            horizontal_paths = self.find_optimal_horizontal_paths(grad_map_b, y_inits, band_width)  # Shape: (num_horizontal_paths, W)
+            # Mark horizontal boundaries
+            for i in range(num_horizontal_paths):
+                boundary_masks_horizontal[b, horizontal_paths[i], x_indices] = True
+
+        # Compute vertical labels
+        vertical_boundaries_int = boundary_masks_vertical.to(torch.int32)
+        vertical_labels = torch.cumsum(vertical_boundaries_int, dim=2)
+
+        # Compute horizontal labels
+        horizontal_boundaries_int = boundary_masks_horizontal.to(torch.int32)
+        horizontal_labels = torch.cumsum(horizontal_boundaries_int, dim=1)
+
+        # Compute final region labels
+        num_vertical_segments = self.num_segments_col
+        num_horizontal_segments = self.num_segments_row
+
+        new_segmentation_masks = vertical_labels + num_vertical_segments * horizontal_labels
+
+        return new_segmentation_masks  # Shape: (B, H, W)
+
+    def find_optimal_vertical_paths(self, grad_map, x_inits, band_width):
+        """
+        Find the optimal vertical paths around the initial x positions using dynamic programming.
+        """
+        H, W = grad_map.shape
+        device = grad_map.device
+        num_paths = x_inits.size(0)
+
+        # Define bands around x_inits
+        x_offsets = torch.arange(-band_width, band_width + 1, device=device)
+        x_indices = x_inits.unsqueeze(1) + x_offsets.unsqueeze(0)  # Shape: (num_paths, num_positions)
+        x_indices = x_indices.clamp(0, W - 1).long()
+        num_positions = x_indices.size(1)
+
+        # Initialize cost and path matrices
+        cost = torch.full((H, num_paths, num_positions), float('inf'), device=device)
+        path = torch.zeros((H, num_paths, num_positions), dtype=torch.long, device=device)
+
+        # First row
+        grad_row = grad_map[0].unsqueeze(0).expand(num_paths, -1)  # Shape: (num_paths, W)
+        cost[0] = -grad_row.gather(1, x_indices)  # Shape: (num_paths, num_positions)
+
+        # Precompute position indices
+        positions = torch.arange(num_positions, device=device).unsqueeze(0).expand(num_paths, -1)  # Shape: (num_paths, num_positions)
+
+        # Dynamic programming
+        for y in range(1, H):
+            # Pad the previous cost for easy indexing
+            padded_prev_cost = torch.cat([
+                torch.full((num_paths, 1), float('inf'), device=device),
+                cost[y - 1],
+                torch.full((num_paths, 1), float('inf'), device=device)
+            ], dim=1)  # Shape: (num_paths, num_positions + 2)
+
+            # Indices for possible moves: left (-1), stay (0), right (+1)
+            move_offsets = torch.tensor([-1, 0, 1], device=device)
+            neighbor_indices = positions.unsqueeze(2) + move_offsets.view(1, 1, -1)  # Shape: (num_paths, num_positions, 3)
+            neighbor_indices = neighbor_indices.clamp(0, num_positions - 1)
+
+            # Adjust for padding
+            neighbor_indices_padded = neighbor_indices + 1  # Adjust for the padding
+            neighbor_indices_padded = neighbor_indices_padded.long()
+
+            # Adjust dimensions of padded_prev_cost
+            padded_prev_cost_expanded = padded_prev_cost.unsqueeze(1).expand(-1, num_positions, -1)
+
+            # Gather costs for possible moves
+            prev_costs = padded_prev_cost_expanded.gather(2, neighbor_indices_padded)  # Shape: (num_paths, num_positions, 3)
+
+            # Find the minimum cost among the neighbors
+            min_prev_costs, min_indices = prev_costs.min(dim=2)  # Shape: (num_paths, num_positions)
+
+            # Update cost and path
+            grad_row = grad_map[y].unsqueeze(0).expand(num_paths, -1)  # Shape: (num_paths, W)
+            current_grad = -grad_row.gather(1, x_indices)
+            cost[y] = min_prev_costs + current_grad  # Shape: (num_paths, num_positions)
+            path[y] = neighbor_indices.gather(2, min_indices.unsqueeze(2)).squeeze(2)  # Shape: (num_paths, num_positions)
+
+        # Backtracking to find the optimal paths
+        idx = cost[-1].argmin(dim=1)  # Shape: (num_paths,)
+        optimal_paths = []
+        for y in reversed(range(H)):
+            optimal_paths.append(x_indices[torch.arange(num_paths), idx])  # Shape: (num_paths,)
+            idx = path[y, torch.arange(num_paths), idx]
+        optimal_paths = torch.stack(optimal_paths[::-1], dim=1)  # Shape: (num_paths, H)
+        return optimal_paths  # Shape: (num_paths, H)
+
+    def find_optimal_horizontal_paths(self, grad_map, y_inits, band_width):
+        """
+        Find the optimal horizontal paths around the initial y positions using dynamic programming.
+        """
+        H, W = grad_map.shape
+        device = grad_map.device
+        num_paths = y_inits.size(0)
+
+        # Define bands around y_inits
+        y_offsets = torch.arange(-band_width, band_width + 1, device=device)
+        y_indices = y_inits.unsqueeze(1) + y_offsets.unsqueeze(0)  # Shape: (num_paths, num_positions)
+        y_indices = y_indices.clamp(0, H - 1).long()
+        num_positions = y_indices.size(1)
+
+        # Initialize cost and path matrices
+        cost = torch.full((W, num_paths, num_positions), float('inf'), device=device)
+        path = torch.zeros((W, num_paths, num_positions), dtype=torch.long, device=device)
+
+        # First column
+        grad_col = grad_map[:, 0].unsqueeze(0).expand(num_paths, -1)  # Shape: (num_paths, H)
+        cost[0] = -grad_col.gather(1, y_indices)  # Shape: (num_paths, num_positions)
+
+        # Precompute position indices
+        positions = torch.arange(num_positions, device=device).unsqueeze(0).expand(num_paths, -1)  # Shape: (num_paths, num_positions)
+
+        # Dynamic programming
+        for x in range(1, W):
+            # Pad the previous cost for easy indexing
+            padded_prev_cost = torch.cat([
+                torch.full((num_paths, 1), float('inf'), device=device),
+                cost[x - 1],
+                torch.full((num_paths, 1), float('inf'), device=device)
+            ], dim=1)  # Shape: (num_paths, num_positions + 2)
+
+            # Indices for possible moves: up (-1), stay (0), down (+1)
+            move_offsets = torch.tensor([-1, 0, 1], device=device)
+            neighbor_indices = positions.unsqueeze(2) + move_offsets.view(1, 1, -1)  # Shape: (num_paths, num_positions, 3)
+            neighbor_indices = neighbor_indices.clamp(0, num_positions - 1)
+
+            # Adjust for padding
+            neighbor_indices_padded = neighbor_indices + 1  # Adjust for the padding
+            neighbor_indices_padded = neighbor_indices_padded.long()
+
+            # Adjust dimensions of padded_prev_cost
+            padded_prev_cost_expanded = padded_prev_cost.unsqueeze(1).expand(-1, num_positions, -1)
+
+            # Gather costs for possible moves
+            prev_costs = padded_prev_cost_expanded.gather(2, neighbor_indices_padded)  # Shape: (num_paths, num_positions, 3)
+
+            # Find the minimum cost among the neighbors
+            min_prev_costs, min_indices = prev_costs.min(dim=2)  # Shape: (num_paths, num_positions)
+
+            # Update cost and path
+            grad_col = grad_map[:, x].unsqueeze(0).expand(num_paths, -1)  # Shape: (num_paths, H)
+            current_grad = -grad_col.gather(1, y_indices)
+            cost[x] = min_prev_costs + current_grad  # Shape: (num_paths, num_positions)
+            path[x] = neighbor_indices.gather(2, min_indices.unsqueeze(2)).squeeze(2)  # Shape: (num_paths, num_positions)
+
+        # Backtracking to find the optimal paths
+        idx = cost[-1].argmin(dim=1)  # Shape: (num_paths,)
+        optimal_paths = []
+        for x in reversed(range(W)):
+            optimal_paths.append(y_indices[torch.arange(num_paths), idx])  # Shape: (num_paths,)
+            idx = path[x, torch.arange(num_paths), idx]
+        optimal_paths = torch.stack(optimal_paths[::-1], dim=1)  # Shape: (num_paths, W)
+        return optimal_paths  # Shape: (num_paths, W)
+
+    
+    def forward(self, x):
+        B, C, H, W = x.shape
+        if H != self.H or W != self.W:
+            raise ValueError(f"Input image size must match initialized size: ({self.H}, {self.W})")
+
+        # Compute gradient map
+        grad_map = self.compute_gradient_map(x)  # Shape: (B, 1, H, W)
+
+        # Initialize grid segmentation
+        segmentation_mask = self.initialize_grid(B)  # Shape: (B, H, W)
+
+        # Adjust boundaries
+        new_segmentation_mask = self.adjust_boundaries(grad_map, segmentation_mask)
+
+        return grad_map, segmentation_mask, new_segmentation_mask

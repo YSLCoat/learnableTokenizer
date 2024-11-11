@@ -5,12 +5,16 @@ import torch.nn.functional as F
 from torch_scatter import scatter_mean
 
 from timm.models._manipulate import checkpoint_seq
-from differentiableWatershed.model import VoronoiPropagation
+from differentiableWatershed.model import VoronoiPropagation, BoundaryPathFinder
 
 class differentiableSuperpixelTokenizer(nn.Module):
-    def __init__(self, max_segments, n_channels=3, embed_dim=768):
+    def __init__(self, max_segments, n_channels=3, embed_dim=768, superpixel_algorithm='voronoi'):
         super().__init__()
-        self.superpixel_tokenizer = VoronoiPropagation(max_segments, n_channels)
+        if superpixel_algorithm == 'voronoi':
+            self.superpixel_tokenizer = VoronoiPropagation(max_segments, n_channels)
+        elif superpixel_algorithm == 'pathfinder':
+            #num_segments = torch.sqrt()
+            self.superpixel_tokenizer = BoundaryPathFinder(16, 16)
         self.max_segments = max_segments
         self.embed_dim = embed_dim
     
