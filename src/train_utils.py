@@ -153,7 +153,8 @@ def prepare_datasets(args):
     # Define the postprocessing transformations
     postprocess = (
         transforms.Compose([
-            transforms.RandomResizedCrop(args.img_size),  # Random Resized Crop
+            #transforms.RandomResizedCrop(args.img_size),  # Random Resized Crop
+            transforms.Resize((args.img_size, args.img_size)),
             #transforms.RandomHorizontalFlip(),
             # rand_aug,
             transforms.ToTensor(),
