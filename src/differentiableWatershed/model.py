@@ -21,10 +21,10 @@ class VoronoiPropagation(nn.Module):
         self.W = width
         self.device = torch.device(device)
         
-        # self.unet = smp.Unet(encoder_name="efficientnet-b0",
-        #                      encoder_weights="imagenet",  
-        #                      in_channels=3,               
-        #                      classes=3)   
+        self.unet = smp.Unet(encoder_name="efficientnet-b0",
+                             encoder_weights="imagenet",  
+                             in_channels=3,               
+                             classes=3)   
         
         # Set bandwidth / sigma for kernel
         self.std = self.C / (self.H * self.W)**0.5
@@ -160,9 +160,9 @@ class VoronoiPropagation(nn.Module):
         centroids = self.find_nearest_minima(centroids, grad_map)
         
         # Use the color map (the original image) to guide propagation
-        # spixel_features = self.unet(x)
+        spixel_features = self.unet(x)
         
         # Perform distance-weighted propagation with both gradient and color guidance
-        mask = self.distance_weighted_propagation(centroids, grad_map, x)
+        mask = self.distance_weighted_propagation(centroids, grad_map, spixel_features)
         
         return grad_map, centroids, mask
