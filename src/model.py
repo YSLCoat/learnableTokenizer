@@ -81,7 +81,6 @@ class differentiableSuperpixelTokenizer(nn.Module):
 
         # Return embeddings without attention mask
         return embeddings  # Shape: [B, max_segments, embed_dim]
-
         
 
 class differentiableTokenizerVisionTransformer(nn.Module):
