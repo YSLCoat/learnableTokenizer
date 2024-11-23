@@ -1,110 +1,128 @@
+from timm.models._manipulate import checkpoint_seq
+from differentiableWatershed.model import VoronoiPropagation
+
 import timm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_scatter import scatter_mean
-
-from timm.models._manipulate import checkpoint_seq
 from differentiableWatershed.model import VoronoiPropagation
 
 class differentiableSuperpixelTokenizer(nn.Module):
-    def __init__(self, max_segments, n_channels=3, embed_dim=768):
+    def __init__(self, n_segments, n_channels=3, embed_dim=768):
         super().__init__()
-        self.superpixel_tokenizer = VoronoiPropagation(max_segments)
-        self.max_segments = max_segments
+        self.superpixel_tokenizer = VoronoiPropagation(n_segments)
+        self.n_segments = n_segments
         self.embed_dim = embed_dim
 
         # CNN backbone to extract feature maps
-        self.cnn = nn.Sequential(
+        self.feature_extractor = nn.Sequential(
             nn.Conv2d(n_channels, 64, kernel_size=7, stride=2, padding=3),
             nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.Conv2d(64, embed_dim, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, embed_dim, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(embed_dim),
-            nn.ReLU(),
+            nn.ReLU(inplace=True)
         )
 
-        # Linear layer to project centroid coordinates to positional embeddings
-        self.positional_embedding = nn.Linear(2, embed_dim)
+        # Positional embedding for superpixel masks
+        self.positional_embedding_conv = nn.Conv2d(1, embed_dim, kernel_size=3, padding=1)
+
+        # Attention mechanism for feature aggregation
+        self.superpixel_attention = nn.MultiheadAttention(embed_dim, num_heads=8, batch_first=True)
 
     def forward(self, img):
         # Get the superpixel segments and centroid coordinates from the tokenizer
-        gradient_map, centroid_coords, segments = self.superpixel_tokenizer(img)  # segments: [B, H, W]; centroid_coords: [B, n_centroids, 2]
+        _, _, segments = self.superpixel_tokenizer(img)  # segments: [B, H, W]
 
         batch_size, n_channels, height, width = img.shape
 
         # Process the image with CNN to get feature maps
-        features = self.cnn(img)  # features: [B, C, Hf, Wf]
+        features = self.feature_extractor(img)  # features: [B, embed_dim, Hf, Wf]
         B, C, Hf, Wf = features.shape
 
         # Downsample segments to match feature map size
         segments = F.interpolate(segments.unsqueeze(1).float(), size=(Hf, Wf), mode='nearest').squeeze(1).long()
         # segments: [B, Hf, Wf]
 
-        # Flatten features and segments
-        features_flat = features.permute(0, 2, 3, 1).reshape(-1, C)  # [B * Hf * Wf, embed_dim]
-        segments_flat = segments.view(-1)  # [B * Hf * Wf]
+        # Reshape features and segments
+        features = features.view(B, C, Hf * Wf).permute(0, 2, 1)  # [B, N, C]
+        segments = segments.view(B, Hf * Wf)  # [B, N]
 
-        # Create batch indices
-        batch_indices = torch.arange(B, device=img.device).unsqueeze(1).expand(B, Hf * Wf).reshape(-1)
+        embeddings = []
 
-        # Compute unique segment IDs per batch
-        unique_segment_ids = batch_indices * self.max_segments + segments_flat  # [B * Hf * Wf]
+        for b in range(B):
+            batch_embeddings = []
+            for s in range(self.n_segments):
+                # Get indices of pixels belonging to the current superpixel
+                mask = (segments[b] == s)  # [N]
+                pixel_indices = mask.nonzero(as_tuple=True)[0]  # [num_pixels_in_superpixel]
 
-        # Compute per-segment embeddings using scatter_mean
-        dim_size = B * self.max_segments
-        embeddings = scatter_mean(features_flat, unique_segment_ids, dim=0, dim_size=dim_size)
-        embeddings = embeddings.view(B, self.max_segments, C)  # [B, max_segments, embed_dim]
+                if pixel_indices.numel() == 0:
+                    # If the superpixel is empty, append a zero embedding
+                    batch_embeddings.append(torch.zeros(self.embed_dim, device=img.device))
+                    continue
 
-        # Ensure centroids_normalized is a float tensor
-        centroids_normalized = centroid_coords.clone().float()  # Convert to float
+                # Extract features for the current superpixel
+                pixel_features = features[b, pixel_indices, :]  # [num_pixels_in_superpixel, C]
 
-        # Normalize centroid coordinates
-        centroids_normalized[:, :, 0] /= float(width)   # x-coordinate normalization
-        centroids_normalized[:, :, 1] /= float(height)  # y-coordinate normalization
+                # Create superpixel mask for positional embedding
+                superpixel_mask = torch.zeros(1, Hf * Wf, device=img.device)
+                superpixel_mask[0, pixel_indices] = 1
+                superpixel_mask = superpixel_mask.view(1, 1, Hf, Wf)  # [1, 1, Hf, Wf]
 
-        # Project centroid coordinates to positional embeddings
-        pos_embeddings = self.positional_embedding(centroids_normalized.to(img.device))  # [B, n_centroids, embed_dim]
+                # Compute positional embedding for the superpixel
+                pos_embed = self.positional_embedding_conv(superpixel_mask)  # [1, C, Hf, Wf]
+                pos_embed = pos_embed.view(1, C, Hf * Wf).permute(0, 2, 1)  # [1, N, C]
+                pos_embed = pos_embed[:, pixel_indices, :]  # [1, num_pixels_in_superpixel, C]
+                pos_embed = pos_embed.squeeze(0)  # [num_pixels_in_superpixel, C]
 
-        # Pad pos_embeddings to match max_segments
-        pos_embeddings_padded = torch.zeros(B, self.max_segments, self.embed_dim, device=img.device)
-        n_centroids = centroids_normalized.shape[1]
-        max_segments = self.max_segments
-        if n_centroids > max_segments:
-            # Truncate if necessary
-            pos_embeddings_padded = pos_embeddings[:, :max_segments, :]
-        else:
-            pos_embeddings_padded[:, :n_centroids, :] = pos_embeddings
+                # Add positional embeddings to features
+                pixel_features += pos_embed
 
-        # Combine embeddings with positional embeddings
-        embeddings = embeddings + pos_embeddings_padded
+                # Apply attention (self-attention within the superpixel)
+                attn_output, _ = self.superpixel_attention(
+                    pixel_features.unsqueeze(0),  # [1, num_pixels_in_superpixel, C]
+                    pixel_features.unsqueeze(0),
+                    pixel_features.unsqueeze(0)
+                )  # [1, num_pixels_in_superpixel, C]
+
+                # Aggregate the attended features (e.g., via mean)
+                superpixel_embedding = attn_output.mean(dim=1).squeeze(0)  # [C]
+                batch_embeddings.append(superpixel_embedding)
+
+            # Stack embeddings for all superpixels in the batch
+            batch_embeddings = torch.stack(batch_embeddings, dim=0)  # [n_segments, C]
+            embeddings.append(batch_embeddings)
+
+        embeddings = torch.stack(embeddings, dim=0)  # [B, n_segments, C]
 
         # Return embeddings without attention mask
-        return embeddings  # Shape: [B, max_segments, embed_dim]
+        return embeddings  # Shape: [B, n_segments, embed_dim]
+
         
 
 class differentiableTokenizerVisionTransformer(nn.Module):
-    def __init__(self, model_name, max_segments, num_classes, num_channels, pretrained=False):
+    def __init__(self, model_name, n_segments, num_classes, num_channels, pretrained=False):
         super().__init__()
         self.vit = timm.create_model(model_name, pretrained=pretrained, num_classes=num_classes)
         self.embed_dim = self.vit.embed_dim
 
         # Replace the patch embedding with the superpixel tokenizer
         self.vit.patch_embed = differentiableSuperpixelTokenizer(
-            max_segments=max_segments,
+            n_segments=n_segments,
             n_channels=num_channels,
             embed_dim=self.embed_dim
         )
 
         # Remove positional embeddings from the ViT
         self.vit.pos_embed = None  # Positional embeddings are added in the tokenizer
-        self.vit.num_tokens = max_segments + 1  # Update the number of tokens
+        self.vit.num_tokens = n_segments + 1  # Update the number of tokens
 
         # Optionally, add positional embedding for the CLS token
         self.cls_positional_embedding = nn.Parameter(torch.randn(1, 1, self.embed_dim) * 0.02)
 
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:
-        embeddings = self.vit.patch_embed(x)  # [B, max_segments, embed_dim]
+        embeddings = self.vit.patch_embed(x)  # [B, n_segments, embed_dim]
         b, n, d = embeddings.shape
 
         cls_tokens = self.vit.cls_token.expand(b, -1, -1)  # [B, 1, D]
