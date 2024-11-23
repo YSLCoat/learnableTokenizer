@@ -8,7 +8,7 @@
     "beta_1": 0.9,
     "beta_2": 0.999,
     "weight_decay": 0.01,
-    "batch_size": 2,
+    "batch_size": 16,
     "epochs": 500,
     "save_every": 1,
     "model_name": "vit_tiny_patch16_224",

@@ -7,8 +7,57 @@ import torch.nn as nn
 import torch.nn.functional as F
 from differentiableWatershed.model import VoronoiPropagation
 
+class MaskedLinear(nn.Module):
+    '''Masked linear layer.
+
+    Linear layer that only computes projections for elements in provided 
+    attention mask to save on compute. 
+    '''
+    def __init__(self, in_feat, out_feat, bias=True, activation=None):
+        super().__init__()
+        self.in_feat = in_feat
+        self.out_feat = out_feat
+        self.linear = nn.Linear(in_feat, out_feat, bias=bias)
+        if activation is None:
+            self.act = nn.Identity()
+        else:
+            self.act = activation
+        if bias:
+            self.linear.bias.data.mul_(1e-3)
+        
+    def forward(self, x, amask):
+        assert x.ndim == 2  # x should be of shape [N, in_feat]
+        masked_indices = amask.nonzero(as_tuple=True)[0]
+        if masked_indices.numel() == 0:
+            # If no elements are masked, return zeros
+            out = torch.zeros(x.shape[0], self.out_feat, dtype=x.dtype, device=x.device)
+            return out
+        masked_input = x[masked_indices]  # [num_masked, in_feat]
+        masked_output = self.act(self.linear(masked_input))  # [num_masked, out_feat]
+        out = torch.zeros(x.shape[0], self.out_feat, dtype=x.dtype, device=x.device)
+        out[masked_indices] = masked_output
+        return out
+
+class MaskedMLP(nn.Module):
+    '''Masked MLP module.
+
+    An MLP module that supports masks for training and inference with variable 
+    numbers of tokens in each batch.
+    '''
+    def __init__(self, embed_dim, hid_dim):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.hid_dim = hid_dim
+        self.L1 = MaskedLinear(embed_dim, hid_dim, activation=nn.GELU())
+        self.L2 = MaskedLinear(hid_dim, embed_dim)
+
+    def forward(self, x, amask):
+        x = self.L1(x, amask)
+        x = self.L2(x, amask)
+        return x
+
 class differentiableSuperpixelTokenizer(nn.Module):
-    def __init__(self, n_segments, n_channels=3, embed_dim=768):
+    def __init__(self, n_segments, n_channels=3, embed_dim=768, hid_dim=512):
         super().__init__()
         self.superpixel_tokenizer = VoronoiPropagation(n_segments)
         self.n_segments = n_segments
@@ -27,76 +76,63 @@ class differentiableSuperpixelTokenizer(nn.Module):
         # Positional embedding for superpixel masks
         self.positional_embedding_conv = nn.Conv2d(1, embed_dim, kernel_size=3, padding=1)
 
-        # Attention mechanism for feature aggregation
-        self.superpixel_attention = nn.MultiheadAttention(embed_dim, num_heads=8, batch_first=True)
+        # Masked MLP for feature aggregation
+        self.masked_mlp = MaskedMLP(embed_dim, hid_dim)
 
     def forward(self, img):
-        # Get the superpixel segments and centroid coordinates from the tokenizer
+        # Get the superpixel segments
         _, _, segments = self.superpixel_tokenizer(img)  # segments: [B, H, W]
-
         batch_size, n_channels, height, width = img.shape
 
         # Process the image with CNN to get feature maps
-        features = self.feature_extractor(img)  # features: [B, embed_dim, Hf, Wf]
+        features = self.feature_extractor(img)  # [B, embed_dim, Hf, Wf]
         B, C, Hf, Wf = features.shape
+        N = Hf * Wf
 
         # Downsample segments to match feature map size
         segments = F.interpolate(segments.unsqueeze(1).float(), size=(Hf, Wf), mode='nearest').squeeze(1).long()
-        # segments: [B, Hf, Wf]
+        segments = segments.view(B, N)  # [B, N]
 
-        # Reshape features and segments
-        features = features.view(B, C, Hf * Wf).permute(0, 2, 1)  # [B, N, C]
-        segments = segments.view(B, Hf * Wf)  # [B, N]
+        # Reshape features
+        features = features.view(B, N, C)  # [B, N, C]
 
         embeddings = []
-
         for b in range(B):
-            batch_embeddings = []
-            for s in range(self.n_segments):
-                # Get indices of pixels belonging to the current superpixel
-                mask = (segments[b] == s)  # [N]
-                pixel_indices = mask.nonzero(as_tuple=True)[0]  # [num_pixels_in_superpixel]
+            features_b = features[b]  # [N, C]
+            segments_b = segments[b]  # [N]
 
-                if pixel_indices.numel() == 0:
+            embeddings_b = []
+            for s in range(self.n_segments):
+                # Create mask for the current superpixel
+                mask_s = (segments_b == s)  # [N]
+                num_pixels = mask_s.sum()
+                if num_pixels == 0:
                     # If the superpixel is empty, append a zero embedding
-                    batch_embeddings.append(torch.zeros(self.embed_dim, device=img.device))
+                    embeddings_b.append(torch.zeros(self.embed_dim, device=img.device))
                     continue
 
                 # Extract features for the current superpixel
-                pixel_features = features[b, pixel_indices, :]  # [num_pixels_in_superpixel, C]
+                features_s = features_b  # [N, C]
 
-                # Create superpixel mask for positional embedding
-                superpixel_mask = torch.zeros(1, Hf * Wf, device=img.device)
-                superpixel_mask[0, pixel_indices] = 1
-                superpixel_mask = superpixel_mask.view(1, 1, Hf, Wf)  # [1, 1, Hf, Wf]
-
-                # Compute positional embedding for the superpixel
+                # Compute positional embeddings for the superpixel mask
+                superpixel_mask = mask_s.view(1, 1, Hf, Wf).float()  # [1, 1, Hf, Wf]
                 pos_embed = self.positional_embedding_conv(superpixel_mask)  # [1, C, Hf, Wf]
-                pos_embed = pos_embed.view(1, C, Hf * Wf).permute(0, 2, 1)  # [1, N, C]
-                pos_embed = pos_embed[:, pixel_indices, :]  # [1, num_pixels_in_superpixel, C]
-                pos_embed = pos_embed.squeeze(0)  # [num_pixels_in_superpixel, C]
+                pos_embed = pos_embed.view(C, N).permute(1, 0)  # [N, C]
 
                 # Add positional embeddings to features
-                pixel_features += pos_embed
+                features_s = features_s + pos_embed
 
-                # Apply attention (self-attention within the superpixel)
-                attn_output, _ = self.superpixel_attention(
-                    pixel_features.unsqueeze(0),  # [1, num_pixels_in_superpixel, C]
-                    pixel_features.unsqueeze(0),
-                    pixel_features.unsqueeze(0)
-                )  # [1, num_pixels_in_superpixel, C]
+                # Apply masked MLP
+                mlp_output = self.masked_mlp(features_s, mask_s)
 
-                # Aggregate the attended features (e.g., via mean)
-                superpixel_embedding = attn_output.mean(dim=1).squeeze(0)  # [C]
-                batch_embeddings.append(superpixel_embedding)
+                # Aggregate features (e.g., via mean)
+                superpixel_embedding = mlp_output[mask_s].mean(dim=0)  # [C]
+                embeddings_b.append(superpixel_embedding)
 
-            # Stack embeddings for all superpixels in the batch
-            batch_embeddings = torch.stack(batch_embeddings, dim=0)  # [n_segments, C]
-            embeddings.append(batch_embeddings)
+            embeddings_b = torch.stack(embeddings_b, dim=0)  # [n_segments, C]
+            embeddings.append(embeddings_b)
 
         embeddings = torch.stack(embeddings, dim=0)  # [B, n_segments, C]
-
-        # Return embeddings without attention mask
         return embeddings  # Shape: [B, n_segments, embed_dim]
 
         
