@@ -66,11 +66,14 @@ class differentiableSuperpixelTokenizer(nn.Module):
             nn.ReLU(inplace=True)
         )
 
-        # Positional embedding for superpixel masks
-        self.positional_embedding_conv = nn.Conv2d(1, embed_dim, kernel_size=3, padding=1)
+        # Learnable positional embeddings for each superpixel ID
+        self.superpixel_pos_embed = nn.Embedding(n_segments, embed_dim)  # Shape: [n_segments, embed_dim]
 
         # Masked MLP for feature aggregation
         self.masked_mlp = MaskedMLP(embed_dim, hid_dim)
+        
+        # CLS Token
+        self.cls_token = nn.Parameter(torch.randn(1, 1, embed_dim) * 0.02)  # Shape: [1, 1, embed_dim]
 
     def forward(self, img):
         # Get the superpixel segments
@@ -96,15 +99,14 @@ class differentiableSuperpixelTokenizer(nn.Module):
         global_superpixel_ids = batch_indices * self.n_segments + segments_flat  # [B*N]
         num_superpixels = B * self.n_segments
 
-        # Compute positional embeddings
-        pos_embed_table = nn.Embedding(self.n_segments, self.embed_dim).to(img.device)
-        pos_embed = pos_embed_table(segments_flat % self.n_segments)  # [B*N, C]
+        # Compute positional embeddings for each superpixel
+        pos_embed = self.superpixel_pos_embed(segments_flat % self.n_segments)  # [B*N, embed_dim]
 
         # Add positional embeddings to features
-        features_with_pos = features_flat + pos_embed  # [B*N, C]
+        features_with_pos = features_flat + pos_embed  # [B*N, embed_dim]
 
         # Apply masked MLP
-        mlp_output = self.masked_mlp(features_with_pos, segments_flat >= 0)  # [B*N, C]
+        mlp_output = self.masked_mlp(features_with_pos, segments_flat >= 0)  # [B*N, embed_dim]
 
         # Group features by superpixel ID and retain all pixel embeddings as tokens
         tokens = torch.zeros((num_superpixels, self.embed_dim), device=img.device)
@@ -113,7 +115,12 @@ class differentiableSuperpixelTokenizer(nn.Module):
         # Reshape to match ViT input: [B, n_segments, embed_dim]
         tokens = tokens.view(B, self.n_segments, self.embed_dim)
 
-        return tokens  # Shape: [B, n_segments, embed_dim]
+        # Add CLS token
+        cls_tokens = self.cls_token.expand(B, -1, -1)  # [B, 1, embed_dim]
+        tokens = torch.cat((cls_tokens, tokens), dim=1)  # [B, n_segments + 1, embed_dim]
+
+        return tokens  # Shape: [B, n_segments + 1, embed_dim]
+
         
 
 class differentiableTokenizerVisionTransformer(nn.Module):
@@ -129,25 +136,21 @@ class differentiableTokenizerVisionTransformer(nn.Module):
             embed_dim=self.embed_dim
         )
 
-        # Remove positional embeddings from the ViT
-        self.vit.pos_embed = None  # Positional embeddings are added in the tokenizer
-        self.vit.num_tokens = n_segments + 1  # Update the number of tokens
+        # Update the number of tokens to account for CLS token
+        self.vit.num_tokens = n_segments + 1  # n_segments + 1 (CLS token)
 
-        # Optionally, add positional embedding for the CLS token
-        self.cls_positional_embedding = nn.Parameter(torch.randn(1, 1, self.embed_dim) * 0.02)
+        # Remove positional embeddings from the ViT
+        self.vit.pos_embed = None  # Positional embeddings are now handled by the tokenizer
 
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:
-        embeddings = self.vit.patch_embed(x)  # [B, n_segments, embed_dim]
-        b, n, d = embeddings.shape
+        # The tokenizer already includes CLS token and positional embeddings
+        embeddings = self.vit.patch_embed(x)  # [B, n_segments + 1, embed_dim]
 
-        cls_tokens = self.vit.cls_token.expand(b, -1, -1)  # [B, 1, D]
-        cls_tokens = cls_tokens + self.cls_positional_embedding  # Add positional embedding to CLS token
-
-        x = torch.cat((cls_tokens, embeddings), dim=1)  # [B, n+1, D]
-
-        x = self.vit.pos_drop(x)
+        # Apply positional dropout and normalization (if defined in ViT)
+        x = self.vit.pos_drop(embeddings)
         x = self.vit.norm_pre(x)
 
+        # Pass through Transformer blocks
         if self.vit.grad_checkpointing and not torch.jit.is_scripting():
             x = checkpoint_seq(self.vit.blocks, x)
         else:
