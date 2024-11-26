@@ -5,6 +5,7 @@ import timm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch_scatter
 from differentiableWatershed.model import VoronoiPropagation
 
 class MaskedLinear(nn.Module):
@@ -66,19 +67,51 @@ class differentiableSuperpixelTokenizer(nn.Module):
             nn.ReLU(inplace=True)
         )
 
-        # Learnable positional embeddings for each superpixel ID
-        self.superpixel_pos_embed = nn.Embedding(n_segments, embed_dim)  # Shape: [n_segments, embed_dim]
+        # Positional embedding projection
+        self.positional_embed_proj = nn.Linear(2, embed_dim)
 
         # Masked MLP for feature aggregation
         self.masked_mlp = MaskedMLP(embed_dim, hid_dim)
         
-        # CLS Token
-        self.cls_token = nn.Parameter(torch.randn(1, 1, embed_dim) * 0.02)  # Shape: [1, 1, embed_dim]
+    def compute_centroid_positions(self, segments, device):
+        B, H, W = segments.shape
+        n_segments = segments.max().item() + 1
+
+        # Generate pixel coordinate grid
+        y_coords, x_coords = torch.meshgrid(
+            torch.arange(H, device=device), torch.arange(W, device=device), indexing="ij"
+        )
+        coords = torch.stack((x_coords, y_coords), dim=0)  # Shape: [2, H, W]
+
+        # Flatten for batch-wise operations
+        coords = coords.view(2, -1)  # [2, H*W]
+        segments_flat = segments.view(B, -1)  # [B, H*W]
+
+        # Compute centroids using scatter
+        centroids = torch.zeros((B, n_segments, 2), device=device)  # [B, n_segments, 2]
+        for b in range(B):
+            # Mask coordinates by segment IDs
+            segment_ids = segments_flat[b]  # [H*W]
+            centroids[b] = torch.stack([
+                torch_scatter.scatter_mean(coords[0], segment_ids, dim=0),
+                torch_scatter.scatter_mean(coords[1], segment_ids, dim=0)
+            ], dim=-1)
+
+        return centroids
 
     def forward(self, img):
         # Get the superpixel segments
         _, _, segments = self.superpixel_tokenizer(img)  # segments: [B, H, W]
-        batch_size, _, height, width = img.shape
+
+        # Compute centroids for positional embeddings
+        centroids = self.compute_centroid_positions(segments, device=img.device)  # [B, n_segments, 2]
+
+        # Normalize centroids to [0, 1] range
+        height, width = img.shape[2], img.shape[3]
+        centroids_normalized = centroids / torch.tensor([width, height], device=img.device)  # [B, n_segments, 2]
+
+        # Project centroids to embed_dim
+        positional_embeddings = self.positional_embed_proj(centroids_normalized)  # [B, n_segments, embed_dim]
 
         # Process the image with CNN to get feature maps
         features = self.feature_extractor(img)  # [B, embed_dim, Hf, Wf]
@@ -99,14 +132,8 @@ class differentiableSuperpixelTokenizer(nn.Module):
         global_superpixel_ids = batch_indices * self.n_segments + segments_flat  # [B*N]
         num_superpixels = B * self.n_segments
 
-        # Compute positional embeddings for each superpixel
-        pos_embed = self.superpixel_pos_embed(segments_flat % self.n_segments)  # [B*N, embed_dim]
-
-        # Add positional embeddings to features
-        features_with_pos = features_flat + pos_embed  # [B*N, embed_dim]
-
         # Apply masked MLP
-        mlp_output = self.masked_mlp(features_with_pos, segments_flat >= 0)  # [B*N, embed_dim]
+        mlp_output = self.masked_mlp(features_flat, segments_flat >= 0)  # [B*N, embed_dim]
 
         # Group features by superpixel ID and retain all pixel embeddings as tokens
         tokens = torch.zeros((num_superpixels, self.embed_dim), device=img.device)
@@ -115,18 +142,16 @@ class differentiableSuperpixelTokenizer(nn.Module):
         # Reshape to match ViT input: [B, n_segments, embed_dim]
         tokens = tokens.view(B, self.n_segments, self.embed_dim)
 
-        # Add CLS token
-        cls_tokens = self.cls_token.expand(B, -1, -1)  # [B, 1, embed_dim]
-        tokens = torch.cat((cls_tokens, tokens), dim=1)  # [B, n_segments + 1, embed_dim]
+        # Add positional embeddings
+        tokens += positional_embeddings
 
-        return tokens  # Shape: [B, n_segments + 1, embed_dim]
-
-        
+        return tokens  # Shape: [B, n_segments, embed_dim]
 
 class differentiableTokenizerVisionTransformer(nn.Module):
     def __init__(self, model_name, n_segments, num_classes, num_channels, pretrained=False):
         super().__init__()
         self.vit = timm.create_model(model_name, pretrained=pretrained, num_classes=num_classes)
+        self.vit.num_tokens = n_segments + 1  # Update the number of tokens
         self.embed_dim = self.vit.embed_dim
 
         # Replace the patch embedding with the superpixel tokenizer
@@ -136,26 +161,15 @@ class differentiableTokenizerVisionTransformer(nn.Module):
             embed_dim=self.embed_dim
         )
 
-        # Update the number of tokens to account for CLS token
-        self.vit.num_tokens = n_segments + 1  # n_segments + 1 (CLS token)
-
-        # Remove positional embeddings from the ViT
-        self.vit.pos_embed = None  # Positional embeddings are now handled by the tokenizer
-
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:
-        # The tokenizer already includes CLS token and positional embeddings
-        embeddings = self.vit.patch_embed(x)  # [B, n_segments + 1, embed_dim]
-
-        # Apply positional dropout and normalization (if defined in ViT)
-        x = self.vit.pos_drop(embeddings)
+        x = self.vit.patch_embed(x)
+        x = self.vit._pos_embed(x)
+        x = self.vit.patch_drop(x)
         x = self.vit.norm_pre(x)
-
-        # Pass through Transformer blocks
         if self.vit.grad_checkpointing and not torch.jit.is_scripting():
-            x = checkpoint_seq(self.vit.blocks, x)
+            x = checkpoint_seq(self.blocks, x)
         else:
             x = self.vit.blocks(x)
-
         x = self.vit.norm(x)
         return x
 
@@ -163,3 +177,4 @@ class differentiableTokenizerVisionTransformer(nn.Module):
         x = self.forward_features(x)
         x = self.vit.forward_head(x, pre_logits=False)
         return x
+    
