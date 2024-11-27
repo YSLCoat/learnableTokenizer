@@ -2,7 +2,7 @@ import torch
 import sys
 
 from torch.optim import AdamW
-from model import differentiableTokenizerVisionTransformer
+from model import DifferentiableTokenizerVisionTransformer
 from torchinfo import summary
 import torch.multiprocessing as mp
 from scheduler import CosineDecay
@@ -17,7 +17,7 @@ def main(rank, world_size, args):
     args = parse_input_args(args)
     ddp_setup(rank, world_size)
     
-    model = differentiableTokenizerVisionTransformer(
+    model = DifferentiableTokenizerVisionTransformer(
         args.model_name, args.n_segments, args.n_classes, args.n_channels
     )
     
