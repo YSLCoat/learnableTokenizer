@@ -75,27 +75,24 @@ class differentiableSuperpixelTokenizer(nn.Module):
         
     def compute_centroid_positions(self, segments, device):
         B, H, W = segments.shape
-        n_segments = segments.max().item() + 1
+        n_segments = self.n_segments
 
         # Generate pixel coordinate grid
         y_coords, x_coords = torch.meshgrid(
             torch.arange(H, device=device), torch.arange(W, device=device), indexing="ij"
         )
-        coords = torch.stack((x_coords, y_coords), dim=0)  # Shape: [2, H, W]
+        coords = torch.stack((x_coords, y_coords), dim=-1).view(-1, 2)  # [H*W, 2]
 
-        # Flatten for batch-wise operations
-        coords = coords.view(2, -1)  # [2, H*W]
+        # Flatten segments
         segments_flat = segments.view(B, -1)  # [B, H*W]
 
-        # Compute centroids using scatter
-        centroids = torch.zeros((B, n_segments, 2), device=device)  # [B, n_segments, 2]
-        for b in range(B):
-            # Mask coordinates by segment IDs
-            segment_ids = segments_flat[b]  # [H*W]
-            centroids[b] = torch.stack([
-                torch_scatter.scatter_mean(coords[0], segment_ids, dim=0),
-                torch_scatter.scatter_mean(coords[1], segment_ids, dim=0)
-            ], dim=-1)
+        # Expand coords to match batch size
+        coords = coords.unsqueeze(0).expand(B, -1, -1)  # [B, H*W, 2]
+
+        # Compute centroids using scatter_mean
+        centroids = torch_scatter.scatter_mean(
+            coords, segments_flat.unsqueeze(-1).expand(-1, -1, 2), dim=1, dim_size=n_segments
+        )  # [B, n_segments, 2]
 
         return centroids
 
@@ -161,15 +158,32 @@ class differentiableTokenizerVisionTransformer(nn.Module):
             embed_dim=self.embed_dim
         )
 
+        # Initialize the class token
+        self.vit.cls_token = nn.Parameter(torch.zeros(1, 1, self.embed_dim))
+        nn.init.trunc_normal_(self.vit.cls_token, std=.02)
+
+        # Initialize positional embeddings
+        self.vit.pos_embed = nn.Parameter(torch.zeros(1, n_segments + 1, self.embed_dim))
+        nn.init.trunc_normal_(self.vit.pos_embed, std=.02)
+
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.vit.patch_embed(x)
-        x = self.vit._pos_embed(x)
-        x = self.vit.patch_drop(x)
+        x = self.vit.patch_embed(x)  # x: [B, n_segments, embed_dim]
+
+        # Get cls_token and pos_embed
+        cls_token = self.vit.cls_token.expand(x.size(0), -1, -1)  # [B, 1, embed_dim]
+        x = torch.cat((cls_token, x), dim=1)  # [B, n_segments + 1, embed_dim]
+
+        # Ensure pos_embed matches [1, n_segments + 1, embed_dim]
+        if self.vit.pos_embed.size(1) != x.size(1):
+            # Reinitialize pos_embed to match the new sequence length
+            self.vit.pos_embed = nn.Parameter(torch.zeros(1, x.size(1), self.embed_dim))
+            nn.init.trunc_normal_(self.vit.pos_embed, std=.02)
+
+        x = x + self.vit.pos_embed  # Add positional embeddings
+
+        x = self.vit.pos_drop(x)
         x = self.vit.norm_pre(x)
-        if self.vit.grad_checkpointing and not torch.jit.is_scripting():
-            x = checkpoint_seq(self.blocks, x)
-        else:
-            x = self.vit.blocks(x)
+        x = self.vit.blocks(x)
         x = self.vit.norm(x)
         return x
 
