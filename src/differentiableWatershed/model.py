@@ -18,7 +18,7 @@ import segmentation_models_pytorch as smp
 
 
 class VoronoiPropagation(nn.Module):
-    def __init__(self, num_clusters=64, height=224, width=224, device='cpu'):
+    def __init__(self, num_clusters=196, height=224, width=224, device='cpu'):
         """
         Args:
             num_clusters (int): Number of clusters (centroids) to initialize.

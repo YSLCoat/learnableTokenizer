@@ -6,60 +6,78 @@ import timm
 from differentiableWatershed.model import VoronoiPropagation
 
 class DifferentiableSuperpixelTokenizer(nn.Module):
-    def __init__(self, n_channels, n_segments, embed_dim=768):
+    def __init__(self, n_channels, n_segments, embed_dim=768, box_size=16):
         super().__init__()
+        self.n_channels = n_channels
         self.n_segments = n_segments
         self.embed_dim = embed_dim
+        self.box_size = box_size
         self.superpixel_tokenizer = VoronoiPropagation(n_segments)
-        # Update the linear layer to account for positional information (C + 2)
-        self.linear = nn.Linear(n_channels + 2, embed_dim)
+        # Convolutional layer without activation function
+        self.conv = nn.Conv2d(n_channels, embed_dim, kernel_size=box_size, bias=False)
 
     def forward(self, img):
         B, C, H, W = img.size()
         device = img.device
-        N_pixels = H * W
 
         # Generate superpixel segments
         _, _, segments = self.superpixel_tokenizer(img)  # segments: [B, H, W]
-        segments_flat = segments.view(B, N_pixels)  # [B, N_pixels]
 
-        # Flatten the image tensor
-        img_flat = img.view(B, C, N_pixels).permute(0, 2, 1)  # [B, N_pixels, C]
+        # Create one-hot masks for superpixels
+        masks = torch.nn.functional.one_hot(segments, num_classes=self.n_segments).permute(0, 3, 1, 2).float()  # [B, n_segments, H, W]
 
-        # Compute normalized positional coordinates
+        # Compute coordinate grids
         y_coords, x_coords = torch.meshgrid(
-            torch.arange(H, device=device).float() / (H - 1),
-            torch.arange(W, device=device).float() / (W - 1),
-            indexing="ij"
+            torch.arange(H, device=device),
+            torch.arange(W, device=device),
+            indexing='ij'
         )
-        coords = torch.stack((x_coords, y_coords), dim=-1).view(1, N_pixels, 2).expand(B, -1, -1)  # [B, N_pixels, 2]
+        y_coords = y_coords.float()
+        x_coords = x_coords.float()
 
-        # Concatenate pixel features and positional coordinates
-        img_flat = torch.cat([img_flat, coords], dim=-1)  # [B, N_pixels, C + 2]
+        # Compute centroid coordinates
+        sum_x = (masks * x_coords).view(B, self.n_segments, -1).sum(dim=2)  # [B, n_segments]
+        sum_y = (masks * y_coords).view(B, self.n_segments, -1).sum(dim=2)
+        pixel_counts = masks.view(B, self.n_segments, -1).sum(dim=2)  # [B, n_segments]
+        pixel_counts = torch.clamp(pixel_counts, min=1e-6)  # Avoid division by zero
+        x_c = sum_x / pixel_counts  # [B, n_segments]
+        y_c = sum_y / pixel_counts  # [B, n_segments]
 
-        # Create batch indices
-        batch_indices = torch.arange(B, device=device).unsqueeze(1).repeat(1, N_pixels)  # [B, N_pixels]
+        # Pad the images
+        box_half_size = self.box_size // 2
+        pad = (box_half_size, box_half_size, box_half_size, box_half_size)  # Left, Right, Top, Bottom
+        img_padded = F.pad(img, pad, mode='constant', value=0)
 
-        # Compute unique segment IDs
-        segment_ids = segments_flat + batch_indices * self.n_segments  # [B, N_pixels]
+        # Adjust centroid coordinates due to padding
+        x_c_padded = x_c + box_half_size
+        y_c_padded = y_c + box_half_size
 
-        # Flatten for scatter operations
-        img_flat = img_flat.view(B * N_pixels, C + 2)  # [B*N_pixels, C + 2]
-        segment_ids = segment_ids.view(B * N_pixels)  # [B*N_pixels]
+        # Compute bounding box coordinates
+        x_min = (x_c_padded - box_half_size).long()  # [B, n_segments]
+        y_min = (y_c_padded - box_half_size).long()
 
-        # Apply linear projection to pixel features
-        pixel_embeddings = self.linear(img_flat)  # [B*N_pixels, embed_dim]
+        # Flatten indices
+        batch_indices = torch.arange(B, device=device).unsqueeze(1).repeat(1, self.n_segments).view(-1)  # [B * n_segments]
+        x_min_flat = x_min.view(-1)
+        y_min_flat = y_min.view(-1)
 
-        # Aggregate pixel embeddings per superpixel using scatter_mean
-        superpixel_embeddings = torch_scatter.scatter_mean(
-            pixel_embeddings, segment_ids, dim=0, dim_size=B * self.n_segments
-        )  # [B*n_segments, embed_dim]
+        # Initialize tensor for patches
+        N_patches = B * self.n_segments
+        patches = torch.zeros(N_patches, C, self.box_size, self.box_size, device=device)
 
-        # Reshape to [B, n_segments, embed_dim]
-        superpixel_embeddings = superpixel_embeddings.view(B, self.n_segments, self.embed_dim)
+        # Extract patches
+        for idx in range(N_patches):
+            b = batch_indices[idx]
+            x0 = x_min_flat[idx]
+            y0 = y_min_flat[idx]
+            patch = img_padded[b, :, y0:y0+self.box_size, x0:x0+self.box_size]  # [C, box_size, box_size]
+            patches[idx] = patch
 
-        return superpixel_embeddings  # [B, n_segments, embed_dim]
+        # Apply convolutional layer
+        embeddings = self.conv(patches)  # [N_patches, embed_dim, 1, 1]
+        embeddings = embeddings.view(B, self.n_segments, self.embed_dim)
 
+        return embeddings  # [B, n_segments, embed_dim]
 class DifferentiableTokenizerVisionTransformer(nn.Module):
     def __init__(self, model_name, n_segments, num_classes, num_channels, pretrained=False):
         super().__init__()
