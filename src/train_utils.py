@@ -47,7 +47,7 @@ class Trainer:
         if args.train_from_checkpoint:
             self.model = load_model_from_state_dict(self.model, args.pretrained_model_path)
         
-        self.model = DDP(self.model, device_ids=[self.gpu_id], find_unused_parameters=True)
+        self.model = DDP(self.model, device_ids=[self.gpu_id], find_unused_parameters=False)
         
         self.results = {
             "train_loss": [],
