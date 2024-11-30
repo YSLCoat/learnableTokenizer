@@ -5,79 +5,88 @@ import torch_scatter
 import timm
 from differentiableWatershed.model import VoronoiPropagation
 
+import torch
+import torch.nn as nn
+from torch_geometric.nn import GCNConv
+from torch_geometric.data import Data, Batch
+
+class GraphBasedEmbedder(nn.Module):
+    def __init__(self, in_channels, embed_dim):
+        super().__init__()
+        self.gcn = GCNConv(in_channels, embed_dim, add_self_loops=True)  # One layer GCN
+
+    def forward(self, features, edge_index, batch):
+        """
+        features: [total_nodes, in_channels] - Features of all nodes (superpixels)
+        edge_index: [2, num_edges] - Edge connections between nodes
+        batch: [total_nodes] - Batch index for each node
+        """
+        return self.gcn(features, edge_index)  # Returns [total_nodes, embed_dim]
+
+
 class DifferentiableSuperpixelTokenizer(nn.Module):
-    def __init__(self, n_channels, n_segments, embed_dim=768, box_size=16):
+    def __init__(self, n_channels, n_segments, embed_dim=768):
         super().__init__()
         self.n_channels = n_channels
         self.n_segments = n_segments
         self.embed_dim = embed_dim
-        self.box_size = box_size
         self.superpixel_tokenizer = VoronoiPropagation(n_segments)
-        # Convolutional layer without activation function
-        self.conv = nn.Conv2d(n_channels, embed_dim, kernel_size=box_size, bias=False)
+
+        # Linear projection to node features (patch embeddings)
+        self.node_projector = nn.Linear(n_channels, embed_dim)
+
+        # Graph-based embedding
+        self.graph_embedder = GraphBasedEmbedder(embed_dim, embed_dim)
 
     def forward(self, img):
         B, C, H, W = img.size()
         device = img.device
 
-        # Generate superpixel segments
+        # Step 1: Generate superpixel segments
         _, _, segments = self.superpixel_tokenizer(img)  # segments: [B, H, W]
 
-        # Create one-hot masks for superpixels
-        masks = torch.nn.functional.one_hot(segments, num_classes=self.n_segments).permute(0, 3, 1, 2).float()  # [B, n_segments, H, W]
+        # Step 2: Flatten image and segments
+        img_flat = img.view(B, C, -1)  # [B, C, H*W]
+        segments_flat = segments.view(B, -1)  # [B, H*W]
 
-        # Compute coordinate grids
-        y_coords, x_coords = torch.meshgrid(
-            torch.arange(H, device=device),
-            torch.arange(W, device=device),
-            indexing='ij'
-        )
-        y_coords = y_coords.float()
-        x_coords = x_coords.float()
+        # Step 3: Compute features for each superpixel
+        segment_ids = torch.arange(self.n_segments, device=device)  # All possible segment IDs
+        segment_masks = (segments_flat.unsqueeze(1) == segment_ids.unsqueeze(0).unsqueeze(2))  # [B, n_segments, H*W]
+        
+        # Calculate pixel counts per superpixel for normalization
+        segment_pixel_counts = segment_masks.sum(dim=-1, keepdim=True).clamp_min(1)  # [B, n_segments, 1]
 
-        # Compute centroid coordinates
-        sum_x = (masks * x_coords).view(B, self.n_segments, -1).sum(dim=2)  # [B, n_segments]
-        sum_y = (masks * y_coords).view(B, self.n_segments, -1).sum(dim=2)
-        pixel_counts = masks.view(B, self.n_segments, -1).sum(dim=2)  # [B, n_segments]
-        pixel_counts = torch.clamp(pixel_counts, min=1e-6)  # Avoid division by zero
-        x_c = sum_x / pixel_counts  # [B, n_segments]
-        y_c = sum_y / pixel_counts  # [B, n_segments]
+        # Apply masks to extract features
+        masked_features = segment_masks.unsqueeze(2) * img_flat.unsqueeze(1)  # [B, n_segments, C, H*W]
+        segment_features = masked_features.sum(dim=-1) / segment_pixel_counts  # [B, n_segments, C]
 
-        # Pad the images
-        box_half_size = self.box_size // 2
-        pad = (box_half_size, box_half_size, box_half_size, box_half_size)  # Left, Right, Top, Bottom
-        img_padded = F.pad(img, pad, mode='constant', value=0)
+        # Step 4: Project features to embedding space
+        projected_features = self.node_projector(segment_features)  # [B, n_segments, embed_dim]
 
-        # Adjust centroid coordinates due to padding
-        x_c_padded = x_c + box_half_size
-        y_c_padded = y_c + box_half_size
+        # Step 5: Create edges (fully connected graph)
+        edge_index_list = []
+        batch_indices = []
+        for b in range(B):
+            edge_index = torch.combinations(torch.arange(self.n_segments, device=device), r=2).T
+            edge_index = torch.cat([edge_index, edge_index.flip(0)], dim=1)  # Make bidirectional
+            edge_index_list.append(edge_index)
+            batch_indices.append(torch.full((self.n_segments,), b, dtype=torch.long, device=device))
 
-        # Compute bounding box coordinates
-        x_min = (x_c_padded - box_half_size).long()  # [B, n_segments]
-        y_min = (y_c_padded - box_half_size).long()
+        # Combine edge indices for the batch
+        edge_index = torch.cat(edge_index_list, dim=1)  # [2, total_edges]
+        batch = torch.cat(batch_indices, dim=0)  # [total_nodes]
 
-        # Flatten indices
-        batch_indices = torch.arange(B, device=device).unsqueeze(1).repeat(1, self.n_segments).view(-1)  # [B * n_segments]
-        x_min_flat = x_min.view(-1)
-        y_min_flat = y_min.view(-1)
+        # Flatten projected features across the batch
+        embeddings = projected_features.view(-1, self.embed_dim)  # [total_nodes, embed_dim]
 
-        # Initialize tensor for patches
-        N_patches = B * self.n_segments
-        patches = torch.zeros(N_patches, C, self.box_size, self.box_size, device=device)
+        # Step 6: Graph-based embedding
+        graph_embeddings = self.graph_embedder(embeddings, edge_index, batch)  # [total_nodes, embed_dim]
 
-        # Extract patches
-        for idx in range(N_patches):
-            b = batch_indices[idx]
-            x0 = x_min_flat[idx]
-            y0 = y_min_flat[idx]
-            patch = img_padded[b, :, y0:y0+self.box_size, x0:x0+self.box_size]  # [C, box_size, box_size]
-            patches[idx] = patch
+        # Step 7: Reshape into [B, n_segments, embed_dim]
+        output = graph_embeddings.view(B, self.n_segments, self.embed_dim)
 
-        # Apply convolutional layer
-        embeddings = self.conv(patches)  # [N_patches, embed_dim, 1, 1]
-        embeddings = embeddings.view(B, self.n_segments, self.embed_dim)
-
-        return embeddings  # [B, n_segments, embed_dim]
+        return output
+    
 class DifferentiableTokenizerVisionTransformer(nn.Module):
     def __init__(self, model_name, n_segments, num_classes, num_channels, pretrained=False):
         super().__init__()
