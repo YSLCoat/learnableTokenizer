@@ -37,10 +37,6 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
         features = self.cnn(img)  # features: [B, C, Hf, Wf]
         B, C, Hf, Wf = features.shape
 
-        # Downsample segments to match feature map size
-        # segments = F.interpolate(segments.unsqueeze(1).float(), size=(Hf, Wf), mode='nearest').squeeze(1).long()
-        # segments: [B, Hf, Wf]
-
         # Flatten features and segments
         features_flat = features.permute(0, 2, 3, 1).reshape(-1, C)  # [B * Hf * Wf, embed_dim]
         segments_flat = segments.view(-1)  # [B * Hf * Wf]
