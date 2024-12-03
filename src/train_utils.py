@@ -149,14 +149,12 @@ def prepare_dataloader(dataset: Dataset, batch_size: int):
     )
     
 def prepare_datasets(args):
-    rand_aug = rand_augment_transform(config_str='rand-m9-mstd0.5', hparams={})
     # Define the postprocessing transformations
     postprocess = (
         transforms.Compose([
-            #transforms.RandomResizedCrop(args.img_size),  # Random Resized Crop
-            transforms.Resize((args.img_size, args.img_size)),
+            transforms.Resize(256),
+            transforms.RandomResizedCrop(args.img_size),  # Random Resized Crop
             transforms.RandomHorizontalFlip(),
-            # rand_aug,
             transforms.ToTensor(),
             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
             
