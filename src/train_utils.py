@@ -150,11 +150,21 @@ def prepare_dataloader(dataset: Dataset, batch_size: int):
     
 def prepare_datasets(args):
     # Define the postprocessing transformations
-    postprocess = (
+    postprocess_train = (
         transforms.Compose([
             transforms.Resize(256),
             transforms.RandomResizedCrop(args.img_size),  # Random Resized Crop
             transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+            
+        ]),
+        nn.Identity(),
+    )
+    
+    postprocess_val = (
+        transforms.Compose([
+            transforms.Resize((args.img_size, args.img_size)),
             transforms.ToTensor(),
             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
             
@@ -171,7 +181,7 @@ def prepare_datasets(args):
             'cls'
         ],
         train=True,
-    ).map_tuple(*postprocess)
+    ).map_tuple(*postprocess_train)
 
     # Create the validation dataset
     val_dataset = quixdata.QuixDataset(
@@ -182,7 +192,7 @@ def prepare_datasets(args):
             'cls'
         ],
         train=False,
-    ).map_tuple(*postprocess)
+    ).map_tuple(*postprocess_val)
     
     return train_dataset, val_dataset
     
