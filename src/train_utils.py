@@ -1,10 +1,12 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 import torch.nn.functional as F
-import torchvision.transforms as transforms
+import torchvision.transforms.v2 as transforms
 import torch.nn as nn
-from timm.data.auto_augment import rand_augment_transform
+from torchvision.transforms.v2 import RandAugment
 from data_utils import mixup_augmentation
+
+
 
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -152,22 +154,26 @@ def prepare_datasets(args):
     # Define the postprocessing transformations
     postprocess_train = (
         transforms.Compose([
-            transforms.Resize(256),
-            transforms.RandomResizedCrop(args.img_size),  # Random Resized Crop
-            transforms.RandomHorizontalFlip(),
+            transforms.Resize((args.img_size, args.img_size)),
+            RandAugment(num_ops=2, magnitude=9),
             transforms.ToTensor(),
-            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-            
+            transforms.Normalize(
+                mean=(0.485, 0.456, 0.406),
+                std=(0.229, 0.224, 0.225)
+            ),
         ]),
         nn.Identity(),
     )
-    
+
+    # Define the postprocessing transformations for validation
     postprocess_val = (
         transforms.Compose([
             transforms.Resize((args.img_size, args.img_size)),
             transforms.ToTensor(),
-            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-            
+            transforms.Normalize(
+                mean=(0.485, 0.456, 0.406),
+                std=(0.229, 0.224, 0.225)
+            ),
         ]),
         nn.Identity(),
     )
