@@ -44,7 +44,7 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
 
     def extract_boundary_coordinates(self, segments):
         """
-        Extract boundary coordinates of superpixels.
+        Extract boundary coordinates of superpixels in a vectorized manner.
 
         Args:
             segments (torch.Tensor): Tensor of shape [B, H, W] containing superpixel labels.
@@ -53,34 +53,48 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
             torch.Tensor: Tensor of shape [B, max_segments, n_samples, 2].
         """
         batch_size, height, width = segments.shape
-        boundary_coords = []
 
-        for batch_idx in range(batch_size):
-            batch_boundaries = []
-            for segment_id in range(self.max_segments):
-                mask = (segments[batch_idx] == segment_id).cpu().numpy()
-                contours = find_contours(mask, 0.5)  # Extract boundaries as (y, x) coordinates
-                
-                if contours:
-                    # Use the largest contour if there are multiple
-                    largest_contour = max(contours, key=lambda x: len(x))
-                    sampled_contour = largest_contour[::max(1, len(largest_contour) // self.n_samples)]  # Downsample to n_samples
-                    sampled_contour = torch.tensor(sampled_contour, dtype=torch.float32, device=segments.device)
-                else:
-                    # If no contour exists, use zeros
-                    sampled_contour = torch.zeros((self.n_samples, 2), dtype=torch.float32, device=segments.device)
+        # Create a grid of pixel coordinates
+        grid_y, grid_x = torch.meshgrid(
+            torch.arange(height, device=segments.device),
+            torch.arange(width, device=segments.device),
+            indexing="ij",
+        )
+        grid = torch.stack((grid_y, grid_x), dim=-1)  # Shape: [H, W, 2]
 
-                # If fewer samples than n_samples, pad with zeros
-                if sampled_contour.shape[0] < self.n_samples:
-                    pad_size = self.n_samples - sampled_contour.shape[0]
-                    sampled_contour = F.pad(sampled_contour, (0, 0, 0, pad_size), mode='constant', value=0)
+        # Expand grid to match batch size
+        grid = grid.unsqueeze(0).expand(batch_size, -1, -1, -1)  # [B, H, W, 2]
 
-                batch_boundaries.append(sampled_contour[:self.n_samples])  # Ensure fixed size
+        # Prepare output tensor for boundary coordinates
+        boundary_coords = torch.zeros(
+            (batch_size, self.max_segments, self.n_samples, 2),
+            dtype=torch.float32,
+            device=segments.device,
+        )
 
-            batch_boundaries = torch.stack(batch_boundaries, dim=0)  # [max_segments, n_samples, 2]
-            boundary_coords.append(batch_boundaries)
+        # Iterate over each segment ID
+        for segment_id in range(self.max_segments):
+            # Mask for the current segment
+            mask = (segments == segment_id)  # [B, H, W]
 
-        return torch.stack(boundary_coords, dim=0)  # [B, max_segments, n_samples, 2]
+            # Extract boundary pixel coordinates for each batch
+            for b in range(batch_size):
+                mask_b = mask[b]  # [H, W]
+                coords = grid[b][mask_b]  # Extract valid coordinates for this batch and segment
+
+                if coords.shape[0] > 0:  # If there are valid coordinates
+                    # Downsample or pad to n_samples
+                    sampled_coords = coords[:: max(1, coords.shape[0] // self.n_samples)][: self.n_samples]
+                    # Pad if fewer than n_samples
+                    if sampled_coords.shape[0] < self.n_samples:
+                        pad_size = self.n_samples - sampled_coords.shape[0]
+                        sampled_coords = F.pad(sampled_coords, (0, 0, 0, pad_size), value=0)
+
+                    # Assign sampled coordinates to the output
+                    boundary_coords[b, segment_id, :, :] = sampled_coords
+
+        return boundary_coords  # Shape: [B, max_segments, n_samples, 2]
+
 
     def forward(self, img):
         # Get the superpixel segments and centroid coordinates from the tokenizer
