@@ -14,27 +14,14 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
         self.max_segments = max_segments
         self.embed_dim = embed_dim
 
-        # CNN backbone to extract feature maps
-        self.cnn = nn.Sequential(
-            nn.Conv2d(n_channels, 64, kernel_size=3, stride=1, padding=1),  # Standard convolution
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.Conv2d(64, embed_dim, kernel_size=3, stride=1, padding=2, dilation=2),  # Dilated convolution
-            nn.BatchNorm2d(embed_dim),
-            nn.ReLU(),
-        )
-
         # Linear layer to project centroid coordinates to positional embeddings
         self.positional_embedding = nn.Linear(2, embed_dim)
 
     def forward(self, img):
         # Get the superpixel segments and centroid coordinates from the tokenizer
-        gradient_map, centroid_coords, segments = self.superpixel_tokenizer(img)  # segments: [B, H, W]; centroid_coords: [B, n_centroids, 2]
+        gradient_map, centroid_coords, segments, features = self.superpixel_tokenizer(img)  # segments: [B, H, W]; centroid_coords: [B, n_centroids, 2] features: [B, C, Hf, Wf]
 
         batch_size, n_channels, height, width = img.shape
-
-        # Process the image with CNN to get feature maps
-        features = self.cnn(img)  # features: [B, C, Hf, Wf]
         B, C, Hf, Wf = features.shape
 
         # Flatten features and segments
