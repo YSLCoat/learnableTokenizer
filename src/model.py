@@ -7,12 +7,20 @@ from torch_scatter import scatter_mean
 from timm.models._manipulate import checkpoint_seq
 from differentiableWatershed.model import VoronoiPropagation
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch_scatter import scatter_mean
+from differentiableWatershed.model import VoronoiPropagation
+from skimage.measure import find_contours
+
 class DifferentiableSuperpixelTokenizer(nn.Module):
-    def __init__(self, max_segments, n_channels=3, embed_dim=768):
+    def __init__(self, max_segments, n_channels=3, embed_dim=768, n_samples=16):
         super().__init__()
         self.superpixel_tokenizer = VoronoiPropagation(max_segments)
         self.max_segments = max_segments
         self.embed_dim = embed_dim
+        self.n_samples = n_samples
 
         # CNN backbone to extract feature maps
         self.cnn = nn.Sequential(
@@ -26,6 +34,53 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
 
         # Linear layer to project centroid coordinates to positional embeddings
         self.positional_embedding = nn.Linear(2, embed_dim)
+
+        # MLP to embed boundary coordinates
+        self.boundary_embedding_layer = nn.Sequential(
+            nn.Linear(n_samples * 2, embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, embed_dim),
+        )
+
+    def extract_boundary_coordinates(self, segments):
+        """
+        Extract boundary coordinates of superpixels.
+
+        Args:
+            segments (torch.Tensor): Tensor of shape [B, H, W] containing superpixel labels.
+
+        Returns:
+            torch.Tensor: Tensor of shape [B, max_segments, n_samples, 2].
+        """
+        batch_size, height, width = segments.shape
+        boundary_coords = []
+
+        for batch_idx in range(batch_size):
+            batch_boundaries = []
+            for segment_id in range(self.max_segments):
+                mask = (segments[batch_idx] == segment_id).cpu().numpy()
+                contours = find_contours(mask, 0.5)  # Extract boundaries as (y, x) coordinates
+                
+                if contours:
+                    # Use the largest contour if there are multiple
+                    largest_contour = max(contours, key=lambda x: len(x))
+                    sampled_contour = largest_contour[::max(1, len(largest_contour) // self.n_samples)]  # Downsample to n_samples
+                    sampled_contour = torch.tensor(sampled_contour, dtype=torch.float32, device=segments.device)
+                else:
+                    # If no contour exists, use zeros
+                    sampled_contour = torch.zeros((self.n_samples, 2), dtype=torch.float32, device=segments.device)
+
+                # If fewer samples than n_samples, pad with zeros
+                if sampled_contour.shape[0] < self.n_samples:
+                    pad_size = self.n_samples - sampled_contour.shape[0]
+                    sampled_contour = F.pad(sampled_contour, (0, 0, 0, pad_size), mode='constant', value=0)
+
+                batch_boundaries.append(sampled_contour[:self.n_samples])  # Ensure fixed size
+
+            batch_boundaries = torch.stack(batch_boundaries, dim=0)  # [max_segments, n_samples, 2]
+            boundary_coords.append(batch_boundaries)
+
+        return torch.stack(boundary_coords, dim=0)  # [B, max_segments, n_samples, 2]
 
     def forward(self, img):
         # Get the superpixel segments and centroid coordinates from the tokenizer
@@ -52,10 +107,8 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
         embeddings = scatter_mean(features_flat, unique_segment_ids, dim=0, dim_size=dim_size)
         embeddings = embeddings.view(B, self.max_segments, C)  # [B, max_segments, embed_dim]
 
-        # Ensure centroids_normalized is a float tensor
-        centroids_normalized = centroid_coords.clone().float()  # Convert to float
-
         # Normalize centroid coordinates
+        centroids_normalized = centroid_coords.clone().float()  # Convert to float
         centroids_normalized[:, :, 0] /= float(width)   # x-coordinate normalization
         centroids_normalized[:, :, 1] /= float(height)  # y-coordinate normalization
 
@@ -67,13 +120,17 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
         n_centroids = centroids_normalized.shape[1]
         max_segments = self.max_segments
         if n_centroids > max_segments:
-            # Truncate if necessary
             pos_embeddings_padded = pos_embeddings[:, :max_segments, :]
         else:
             pos_embeddings_padded[:, :n_centroids, :] = pos_embeddings
 
-        # Combine embeddings with positional embeddings
-        embeddings = embeddings + pos_embeddings_padded
+        # Extract and process boundary coordinates
+        boundaries = self.extract_boundary_coordinates(segments)  # [B, max_segments, n_samples, 2]
+        boundaries_flat = boundaries.view(B, self.max_segments, -1)  # [B, max_segments, n_samples * 2]
+        boundary_embeddings = self.boundary_embedding_layer(boundaries_flat)  # [B, max_segments, embed_dim]
+
+        # Combine embeddings with positional and boundary embeddings
+        embeddings = embeddings + pos_embeddings_padded + boundary_embeddings
 
         # Return embeddings without attention mask
         return embeddings  # Shape: [B, max_segments, embed_dim]

@@ -123,7 +123,7 @@ class Trainer:
         
     def _save_checkpoint(self, epoch):
         ckp = self.model.module.state_dict()
-        PATH = "checkpoint.pt"
+        PATH = "checkpoint_boundary_pos_embed.pt"
         torch.save(ckp, PATH)
         print(f"Epoch {epoch} | Training checkpoint saved at {PATH}")
 
