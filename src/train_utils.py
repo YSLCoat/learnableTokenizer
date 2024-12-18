@@ -5,6 +5,7 @@ import torchvision.transforms.v2 as transforms
 import torch.nn as nn
 from torchvision.transforms.v2 import RandAugment
 from data_utils import mixup_augmentation
+from timm.loss import SoftTargetCrossEntropy
 
 
 
@@ -22,7 +23,7 @@ from utils import load_model_from_state_dict
 def ddp_setup(rank, world_size):
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "12400"
-    init_process_group(backend="nccl", rank=rank, world_size=world_size)
+    init_process_group(backend="gloo", rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
 
 class Trainer:
@@ -63,10 +64,10 @@ class Trainer:
             self.model.train()  # Set the model to training mode
             self.optimizer.zero_grad()
             
-            # source, targets = self.mixup_augmentation(source, targets)
+            source, targets = self.mixup_augmentation(source, targets)
             
             output = self.model(source)
-            loss = torch.nn.CrossEntropyLoss()(output, targets)
+            loss = SoftTargetCrossEntropy()(output, targets)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.optimizer.step()
@@ -123,7 +124,7 @@ class Trainer:
         
     def _save_checkpoint(self, epoch):
         ckp = self.model.module.state_dict()
-        PATH = "checkpoint.pt"
+        PATH = "more_augmentations_checkpoint.pt"
         torch.save(ckp, PATH)
         print(f"Epoch {epoch} | Training checkpoint saved at {PATH}")
 

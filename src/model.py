@@ -83,7 +83,7 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
 class DifferentiableTokenizerVisionTransformer(nn.Module):
     def __init__(self, model_name, max_segments, num_classes, num_channels, pretrained=False):
         super().__init__()
-        self.vit = timm.create_model(model_name, pretrained=pretrained, num_classes=num_classes)
+        self.vit = timm.create_model(model_name, pretrained=pretrained, num_classes=num_classes, drop_rate=0.1, attn_drop_rate=0.1, drop_path_rate=0.1)
         self.embed_dim = self.vit.embed_dim
 
         # Replace the patch embedding with the superpixel tokenizer

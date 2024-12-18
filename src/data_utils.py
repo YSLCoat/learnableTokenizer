@@ -1,4 +1,4 @@
-from timm.data import create_transform, Mixup
+from timm.data import Mixup
 
 # Define mixup utility
 def mixup_augmentation(n_classes):
