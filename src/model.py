@@ -7,6 +7,10 @@ from torch_scatter import scatter_mean
 from timm.models._manipulate import checkpoint_seq
 from differentiableWatershed.model import VoronoiPropagation
 
+import torch
+import torch.nn as nn
+from torch_scatter import scatter_mean, scatter_max
+
 class DifferentiableSuperpixelTokenizer(nn.Module):
     def __init__(self, max_segments, n_channels=3, embed_dim=768):
         super().__init__()
@@ -16,10 +20,10 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
 
         # CNN backbone to extract feature maps
         self.cnn = nn.Sequential(
-            nn.Conv2d(n_channels, 64, kernel_size=3, stride=1, padding=1),  # Standard convolution
+            nn.Conv2d(n_channels, 64, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(),
-            nn.Conv2d(64, embed_dim, kernel_size=3, stride=1, padding=2, dilation=2),  # Dilated convolution
+            nn.Conv2d(64, embed_dim, kernel_size=3, stride=1, padding=2, dilation=2),
             nn.BatchNorm2d(embed_dim),
             nn.ReLU(),
         )
@@ -27,56 +31,78 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
         # Linear layer to project centroid coordinates to positional embeddings
         self.positional_embedding = nn.Linear(2, embed_dim)
 
+        # Optional fusion layer to project [mean_emb | max_emb] -> embed_dim
+        # If you plan to just concatenate mean + max and keep 2*embed_dim dimension,
+        # you can remove or comment out this fusion.
+        self.fusion = nn.Linear(2 * embed_dim, embed_dim)
+
     def forward(self, img):
-        # Get the superpixel segments and centroid coordinates from the tokenizer
-        gradient_map, centroid_coords, segments = self.superpixel_tokenizer(img)  # segments: [B, H, W]; centroid_coords: [B, n_centroids, 2]
+        # Tokenize into superpixels
+        gradient_map, centroid_coords, segments = self.superpixel_tokenizer(img)
+        # segments: [B, H, W]
+        # centroid_coords: [B, n_centroids, 2]
 
         batch_size, n_channels, height, width = img.shape
 
-        # Process the image with CNN to get feature maps
-        features = self.cnn(img)  # features: [B, C, Hf, Wf]
+        # Extract features
+        features = self.cnn(img)  # [B, C, Hf, Wf]
         B, C, Hf, Wf = features.shape
 
         # Flatten features and segments
-        features_flat = features.permute(0, 2, 3, 1).reshape(-1, C)  # [B * Hf * Wf, embed_dim]
-        segments_flat = segments.view(-1)  # [B * Hf * Wf]
+        features_flat = features.permute(0, 2, 3, 1).reshape(-1, C)  # [B*Hf*Wf, C]
+        segments_flat = segments.view(-1)  # [B*Hf*Wf]
 
-        # Create batch indices
-        batch_indices = torch.arange(B, device=img.device).unsqueeze(1).expand(B, Hf * Wf).reshape(-1)
+        # Create batch indices to offset segment IDs per batch
+        batch_indices = torch.arange(B, device=img.device).unsqueeze(1)  # [B, 1]
+        batch_indices = batch_indices.expand(B, Hf * Wf).reshape(-1)     # [B*Hf*Wf]
 
-        # Compute unique segment IDs per batch
+        # Shift segment IDs so each batch has unique ID ranges:
+        # segment_id ∈ [0..max_segments - 1], offset by batch_idx * max_segments
         unique_segment_ids = batch_indices * self.max_segments + segments_flat  # [B * Hf * Wf]
 
-        # Compute per-segment embeddings using scatter_mean
+        # We'll have B * max_segments possible slots
         dim_size = B * self.max_segments
-        embeddings = scatter_mean(features_flat, unique_segment_ids, dim=0, dim_size=dim_size)
-        embeddings = embeddings.view(B, self.max_segments, C)  # [B, max_segments, embed_dim]
 
-        # Ensure centroids_normalized is a float tensor
-        centroids_normalized = centroid_coords.clone().float()  # Convert to float
+        # -- 1) Compute scatter_mean --
+        embeddings_mean = scatter_mean(features_flat, unique_segment_ids, dim=0, dim_size=dim_size)
+        embeddings_mean = embeddings_mean.view(B, self.max_segments, C)  # [B, max_segments, C]
 
-        # Normalize centroid coordinates
-        centroids_normalized[:, :, 0] /= float(width)   # x-coordinate normalization
-        centroids_normalized[:, :, 1] /= float(height)  # y-coordinate normalization
+        # -- 2) Compute scatter_max --
+        # scatter_max returns a tuple (values, indices). We only need the values here.
+        embeddings_max, _ = scatter_max(features_flat, unique_segment_ids, dim=0, dim_size=dim_size)
+        embeddings_max = embeddings_max.view(B, self.max_segments, C)  # [B, max_segments, C]
 
-        # Project centroid coordinates to positional embeddings
-        pos_embeddings = self.positional_embedding(centroids_normalized.to(img.device))  # [B, n_centroids, embed_dim]
+        # -- 3) Concatenate mean & max embeddings --
+        embeddings_concat = torch.cat([embeddings_mean, embeddings_max], dim=-1)  
+        # [B, max_segments, 2*C]
 
-        # Pad pos_embeddings to match max_segments
+        # -- 4) Optional: fuse the concatenated embeddings back to size embed_dim --
+        embeddings_fused = self.fusion(embeddings_concat)  # [B, max_segments, embed_dim]
+
+        # -- 5) Positional embeddings from superpixel centroids --
+        centroids_normalized = centroid_coords.clone().float()  
+        centroids_normalized[:, :, 0] /= float(width)   # x / width
+        centroids_normalized[:, :, 1] /= float(height)  # y / height
+
+        pos_embeddings = self.positional_embedding(centroids_normalized.to(img.device)) 
+        # [B, n_centroids, embed_dim]
+
+        # If the number of centroids < max_segments, we need to pad
+        n_centroids = pos_embeddings.shape[1]
         pos_embeddings_padded = torch.zeros(B, self.max_segments, self.embed_dim, device=img.device)
-        n_centroids = centroids_normalized.shape[1]
-        max_segments = self.max_segments
-        if n_centroids > max_segments:
-            # Truncate if necessary
-            pos_embeddings_padded = pos_embeddings[:, :max_segments, :]
+
+        if n_centroids > self.max_segments:
+            # Truncate if there are more centroids than max_segments
+            pos_embeddings_padded = pos_embeddings[:, :self.max_segments, :]
         else:
+            # Otherwise, copy and leave the rest zero
             pos_embeddings_padded[:, :n_centroids, :] = pos_embeddings
 
-        # Combine embeddings with positional embeddings
-        embeddings = embeddings + pos_embeddings_padded
+        # -- 6) Add positional embeddings to the fused embeddings --
+        final_embeddings = embeddings_fused + pos_embeddings_padded  # [B, max_segments, embed_dim]
 
-        # Return embeddings without attention mask
-        return embeddings  # Shape: [B, max_segments, embed_dim]
+        return final_embeddings
+
 
         
 
