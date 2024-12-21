@@ -2,15 +2,10 @@ import timm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_scatter import scatter_mean, scatter_max
+from torch_scatter import scatter_mean
 
 from timm.models._manipulate import checkpoint_seq
 from differentiableWatershed.model import VoronoiPropagation
-
-
-import torch
-from torch import nn
-from torch_scatter import scatter_mean, scatter_max
 
 class DifferentiableSuperpixelTokenizer(nn.Module):
     def __init__(self, max_segments, n_channels=3, embed_dim=768):
@@ -32,9 +27,6 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
         # Linear layer to project centroid coordinates to positional embeddings
         self.positional_embedding = nn.Linear(2, embed_dim)
 
-        # Projection layer to reduce 2*embed_dim to embed_dim
-        self.projection_layer = nn.Linear(2 * embed_dim, embed_dim)
-
     def forward(self, img):
         # Get the superpixel segments and centroid coordinates from the tokenizer
         gradient_map, centroid_coords, segments = self.superpixel_tokenizer(img)  # segments: [B, H, W]; centroid_coords: [B, n_centroids, 2]
@@ -42,11 +34,11 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
         batch_size, n_channels, height, width = img.shape
 
         # Process the image with CNN to get feature maps
-        features = self.cnn(img)  # features: [B, C, Hf, Wf], where C = embed_dim // 2
+        features = self.cnn(img)  # features: [B, C, Hf, Wf]
         B, C, Hf, Wf = features.shape
 
         # Flatten features and segments
-        features_flat = features.permute(0, 2, 3, 1).reshape(-1, C)  # [B * Hf * Wf, C]
+        features_flat = features.permute(0, 2, 3, 1).reshape(-1, C)  # [B * Hf * Wf, embed_dim]
         segments_flat = segments.view(-1)  # [B * Hf * Wf]
 
         # Create batch indices
@@ -55,24 +47,15 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
         # Compute unique segment IDs per batch
         unique_segment_ids = batch_indices * self.max_segments + segments_flat  # [B * Hf * Wf]
 
-        # Compute per-segment average embeddings (D/2)
+        # Compute per-segment embeddings using scatter_mean
         dim_size = B * self.max_segments
-        avg_embeddings = scatter_mean(features_flat, unique_segment_ids, dim=0, dim_size=dim_size)  # [B * max_segments, embed_dim]
+        embeddings = scatter_mean(features_flat, unique_segment_ids, dim=0, dim_size=dim_size)
+        embeddings = embeddings.view(B, self.max_segments, C)  # [B, max_segments, embed_dim]
 
-        # Compute per-segment max embeddings (D/2)
-        max_embeddings, _ = scatter_max(features_flat, unique_segment_ids, dim=0, dim_size=dim_size)  # [B * max_segments, embed_dim]
-
-        # Concatenate average and max embeddings along the channel dimension
-        concatenated_embeddings = torch.cat((avg_embeddings, max_embeddings), dim=-1)  # [B * max_segments, 2 * embed_dim]
-        
-        # Project concatenated embeddings to embed_dim
-        embeddings = self.projection_layer(concatenated_embeddings)  # [B * max_segments, embed_dim]
-
-        # Reshape embeddings
-        embeddings = embeddings.view(B, self.max_segments, self.embed_dim)  # [B, max_segments, embed_dim]
+        # Ensure centroids_normalized is a float tensor
+        centroids_normalized = centroid_coords.clone().float()  # Convert to float
 
         # Normalize centroid coordinates
-        centroids_normalized = centroid_coords.clone().float()  # Convert to float
         centroids_normalized[:, :, 0] /= float(width)   # x-coordinate normalization
         centroids_normalized[:, :, 1] /= float(height)  # y-coordinate normalization
 
@@ -92,9 +75,8 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
         # Combine embeddings with positional embeddings
         embeddings = embeddings + pos_embeddings_padded
 
-        # Return embeddings
+        # Return embeddings without attention mask
         return embeddings  # Shape: [B, max_segments, embed_dim]
-
 
         
 
