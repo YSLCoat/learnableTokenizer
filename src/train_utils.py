@@ -22,7 +22,7 @@ from utils import load_model_from_state_dict
 
 def ddp_setup(rank, world_size):
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12402"
+    os.environ["MASTER_PORT"] = "12400"
     init_process_group(backend="nccl", rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
 
@@ -37,7 +37,6 @@ class Trainer:
         # scheduler: torch.optim.lr_scheduler._LRScheduler,
         gpu_id: int,
         save_every: int,
-        gradient_accumulation_steps: int = 8,  # Effective batch size = batch_size * 4
     ) -> None:
         self.gpu_id = gpu_id
         self.model = model.to(gpu_id)
@@ -47,7 +46,6 @@ class Trainer:
         # self.scheduler = scheduler
         self.save_every = save_every
         self.mixup_augmentation = mixup_augmentation(args.n_classes)
-        self.gradient_accumulation_steps = gradient_accumulation_steps
         
         if args.train_from_checkpoint:
             self.model = load_model_from_state_dict(self.model, args.pretrained_model_path)
@@ -61,7 +59,7 @@ class Trainer:
             "val_acc": []
         }
         
-    def _run_batch(self, source, targets, train=False, accumulation_step=0):
+    def _run_batch(self, source, targets, train=False):
         if train:
             self.model.train()  # Set the model to training mode
             self.optimizer.zero_grad()
@@ -70,18 +68,12 @@ class Trainer:
             
             output = self.model(source)
             loss = SoftTargetCrossEntropy()(output, targets)
-            # Scale loss by accumulation steps
-            loss = loss / self.gradient_accumulation_steps
             loss.backward()
+            nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+            self.optimizer.step()
+            # self.scheduler.step()
             
-            # Perform optimizer step only at the end of accumulation steps
-            if (accumulation_step + 1) % self.gradient_accumulation_steps == 0:
-                nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                self.optimizer.step()
-                self.optimizer.zero_grad()
-
-            
-            return loss.item() * self.gradient_accumulation_steps, output.argmax(dim=1)
+            return loss.item(), output.argmax(dim=1)
         else:
             self.model.eval()  # Set the model to evaluation mode
             with torch.no_grad():
@@ -97,11 +89,10 @@ class Trainer:
         train_loss = 0.0
         correct_train = 0
         total_train = 0
-        for step, (source, targets) in enumerate(tqdm(self.train_data)):
+        for source, targets in tqdm(self.train_data):
             source = source.to(self.gpu_id)
             targets = targets.to(self.gpu_id)
-            
-            loss, preds = self._run_batch(source, targets, train=True, accumulation_step=step)
+            loss, preds = self._run_batch(source, targets, train=True)
             train_loss += loss
             correct_train += (preds == targets).sum().item()
             total_train += targets.size(0)
