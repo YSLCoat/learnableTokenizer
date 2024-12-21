@@ -37,7 +37,7 @@ class Trainer:
         # scheduler: torch.optim.lr_scheduler._LRScheduler,
         gpu_id: int,
         save_every: int,
-        gradient_accumulation_steps: int = 16,  # Effective batch size = batch_size * 4
+        gradient_accumulation_steps: int = 8,  # Effective batch size = batch_size * 4
     ) -> None:
         self.gpu_id = gpu_id
         self.model = model.to(gpu_id)
