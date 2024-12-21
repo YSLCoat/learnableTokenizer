@@ -4,7 +4,7 @@
 #SBATCH --account=ec232
 #SBATCH --time=48:00:00
 #SBATCH --partition=ifi_accel    # To use the accelerator nodes
-#SBATCH --gpus=8
+#SBATCH --gpus=4
 #SBATCH --nodes=2
 #SBATCH --mem-per-gpu=25G
 #SBATCH --cpus-per-task=5
