@@ -124,7 +124,7 @@ class Trainer:
         
     def _save_checkpoint(self, epoch):
         ckp = self.model.module.state_dict()
-        PATH = "scatter_mean_max_checkpoint.pt"
+        PATH = "shape_embedding_checkpoint.pt"
         torch.save(ckp, PATH)
         print(f"Epoch {epoch} | Training checkpoint saved at {PATH}")
 
