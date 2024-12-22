@@ -9,7 +9,7 @@ from differentiableWatershed.model import VoronoiPropagation
 
 import torch
 import torch.nn as nn
-from torch_scatter import scatter_mean, scatter_max
+from torch_scatter import scatter_mean, scatter_max, scatter_min, scatter_add
 
 class DifferentiableSuperpixelTokenizer(nn.Module):
     def __init__(self, max_segments, n_channels=3, embed_dim=768):
@@ -31,75 +31,143 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
         # Linear layer to project centroid coordinates to positional embeddings
         self.positional_embedding = nn.Linear(2, embed_dim)
 
-        # Optional fusion layer to project [mean_emb | max_emb] -> embed_dim
-        # If you plan to just concatenate mean + max and keep 2*embed_dim dimension,
-        # you can remove or comment out this fusion.
+        # Fusion layer to project [mean_emb | max_emb] -> embed_dim
         self.fusion = nn.Linear(2 * embed_dim, embed_dim)
 
+        # ----------------------------------------------------------------------
+        # NEW: Embed shape descriptors (e.g. area, aspect_ratio).
+        # Feel free to add more features (perimeter, bounding_box_area, etc.)
+        # shape_feature_dim = 2 -> [area, aspect_ratio]
+        # Then we map shape features -> embed_dim
+        # ----------------------------------------------------------------------
+        self.shape_feature_dim = 2  
+        self.shape_embedding = nn.Sequential(
+            nn.Linear(self.shape_feature_dim, embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, embed_dim),
+        )
+
     def forward(self, img):
+        """
+        Args:
+            img: [B, 3, H, W]
+        Returns:
+            final_embeddings: [B, max_segments, embed_dim]
+        """
         # Tokenize into superpixels
         gradient_map, centroid_coords, segments = self.superpixel_tokenizer(img)
         # segments: [B, H, W]
         # centroid_coords: [B, n_centroids, 2]
 
-        batch_size, n_channels, height, width = img.shape
+        B, _, H, W = img.shape
 
-        # Extract features
-        features = self.cnn(img)  # [B, C, Hf, Wf]
-        B, C, Hf, Wf = features.shape
+        # -------------------------------------------------
+        # 1) Extract CNN features
+        # -------------------------------------------------
+        features = self.cnn(img)  # [B, C, H, W] if your CNN keeps the same spatial size
+        _, C, Hf, Wf = features.shape
+        # (We'll assume Hf==H and Wf==W for simplicity.)
 
-        # Flatten features and segments
-        features_flat = features.permute(0, 2, 3, 1).reshape(-1, C)  # [B*Hf*Wf, C]
-        segments_flat = segments.view(-1)  # [B*Hf*Wf]
+        # -------------------------------------------------
+        # 2) Flatten features & segments for scatter
+        # -------------------------------------------------
+        features_flat = features.permute(0, 2, 3, 1).reshape(-1, C)  # [B*H*W, C]
+        segments_flat = segments.view(-1)                            # [B*H*W]
 
-        # Create batch indices to offset segment IDs per batch
+        # Create per-batch offsets so superpixel IDs are unique across the batch
         batch_indices = torch.arange(B, device=img.device).unsqueeze(1)  # [B, 1]
-        batch_indices = batch_indices.expand(B, Hf * Wf).reshape(-1)     # [B*Hf*Wf]
+        batch_indices = batch_indices.expand(B, Hf * Wf).reshape(-1)     # [B*H*W]
+        unique_segment_ids = batch_indices * self.max_segments + segments_flat  # [B*H*W]
+        dim_size = B * self.max_segments  # total "slots"
 
-        # Shift segment IDs so each batch has unique ID ranges:
-        # segment_id ∈ [0..max_segments - 1], offset by batch_idx * max_segments
-        unique_segment_ids = batch_indices * self.max_segments + segments_flat  # [B * Hf * Wf]
-
-        # We'll have B * max_segments possible slots
-        dim_size = B * self.max_segments
-
-        # -- 1) Compute scatter_mean --
+        # -------------------------------------------------
+        # 3) Compute scatter_mean and scatter_max
+        # -------------------------------------------------
         embeddings_mean = scatter_mean(features_flat, unique_segment_ids, dim=0, dim_size=dim_size)
-        embeddings_mean = embeddings_mean.view(B, self.max_segments, C)  # [B, max_segments, C]
+        embeddings_mean = embeddings_mean.view(B, self.max_segments, C)
 
-        # -- 2) Compute scatter_max --
-        # scatter_max returns a tuple (values, indices). We only need the values here.
         embeddings_max, _ = scatter_max(features_flat, unique_segment_ids, dim=0, dim_size=dim_size)
-        embeddings_max = embeddings_max.view(B, self.max_segments, C)  # [B, max_segments, C]
+        embeddings_max = embeddings_max.view(B, self.max_segments, C)
 
-        # -- 3) Concatenate mean & max embeddings --
-        embeddings_concat = torch.cat([embeddings_mean, embeddings_max], dim=-1)  
-        # [B, max_segments, 2*C]
-
-        # -- 4) Optional: fuse the concatenated embeddings back to size embed_dim --
+        embeddings_concat = torch.cat([embeddings_mean, embeddings_max], dim=-1)
         embeddings_fused = self.fusion(embeddings_concat)  # [B, max_segments, embed_dim]
 
-        # -- 5) Positional embeddings from superpixel centroids --
-        centroids_normalized = centroid_coords.clone().float()  
-        centroids_normalized[:, :, 0] /= float(width)   # x / width
-        centroids_normalized[:, :, 1] /= float(height)  # y / height
+        # -------------------------------------------------
+        # 4) Compute shape descriptors (area, aspect ratio)
+        # -------------------------------------------------
+        # 4a) Build pixel coordinate maps [H, W] -> flatten -> broadcast for B if needed
+        y_grid = torch.arange(Hf, device=img.device).unsqueeze(1).expand(Hf, Wf)  # [H, W]
+        x_grid = torch.arange(Wf, device=img.device).unsqueeze(0).expand(Hf, Wf)  # [H, W]
+        y_coords_flat = y_grid.reshape(-1)  # [H*W]
+        x_coords_flat = x_grid.reshape(-1)  # [H*W]
+
+        # 4b) For each pixel, we add 1 to the area. So area is scatter_add(1, segment_id).
+        area = scatter_add(
+            torch.ones_like(segments_flat, dtype=torch.float), 
+            unique_segment_ids,
+            dim=0,
+            dim_size=dim_size
+        ).view(B, self.max_segments)
+
+        # 4c) bounding boxes: (min_x, max_x, min_y, max_y)
+        min_x, _ = scatter_min(x_coords_flat, unique_segment_ids, dim=0, dim_size=dim_size)
+        max_x, _ = scatter_max(x_coords_flat, unique_segment_ids, dim=0, dim_size=dim_size)
+        min_y, _ = scatter_min(y_coords_flat, unique_segment_ids, dim=0, dim_size=dim_size)
+        max_y, _ = scatter_max(y_coords_flat, unique_segment_ids, dim=0, dim_size=dim_size)
+
+        min_x = min_x.view(B, self.max_segments)
+        max_x = max_x.view(B, self.max_segments)
+        min_y = min_y.view(B, self.max_segments)
+        max_y = max_y.view(B, self.max_segments)
+
+        # 4d) Aspect ratio = (width / height) of the bounding box
+        # (Add 1 to avoid zero-size bounding boxes.)
+        # Note: You could also do (max_y-min_y+1)/(max_x-min_x+1) if you prefer.
+        box_width = (max_x - min_x + 1).clamp(min=1e-6)
+        box_height = (max_y - min_y + 1).clamp(min=1e-6)
+        aspect_ratio = box_width / box_height  # shape [B, max_segments]
+
+        # Stack shape features -> [B, max_segments, shape_feature_dim]
+        shape_feats = torch.stack([area, aspect_ratio], dim=-1)
+
+        # 4e) If the actual number of superpixels is n_centroids < max_segments,
+        #     not all slots are used. For uniform handling, we might want
+        #     to zero out the shape features for IDs >= n_centroids.
+        #     You can do this with a small loop or by using the info in `centroid_coords`.
+        #
+        #     However, if VoronoiPropagation can produce *up to* max_segments,
+        #     typically each ID [0..n_centroids-1] is valid. 
+        #     We'll not strictly mask them here, but you could if needed.
+
+        # -------------------------------------------------
+        # 5) Embed shape features
+        # -------------------------------------------------
+        shape_emb = self.shape_embedding(shape_feats)  # [B, max_segments, embed_dim]
+
+        # -------------------------------------------------
+        # 6) Positional embeddings from superpixel centroids
+        # -------------------------------------------------
+        centroids_normalized = centroid_coords.clone().float()
+        centroids_normalized[:, :, 0] /= float(W)   # x / width
+        centroids_normalized[:, :, 1] /= float(H)   # y / height
 
         pos_embeddings = self.positional_embedding(centroids_normalized.to(img.device)) 
         # [B, n_centroids, embed_dim]
 
-        # If the number of centroids < max_segments, we need to pad
         n_centroids = pos_embeddings.shape[1]
         pos_embeddings_padded = torch.zeros(B, self.max_segments, self.embed_dim, device=img.device)
-
         if n_centroids > self.max_segments:
-            # Truncate if there are more centroids than max_segments
             pos_embeddings_padded = pos_embeddings[:, :self.max_segments, :]
         else:
-            # Otherwise, copy and leave the rest zero
             pos_embeddings_padded[:, :n_centroids, :] = pos_embeddings
 
-        # -- 6) Add positional embeddings to the fused embeddings --
-        final_embeddings = embeddings_fused + pos_embeddings_padded  # [B, max_segments, embed_dim]
+        # -------------------------------------------------
+        # 7) Combine everything
+        # -------------------------------------------------
+        # final_embeddings currently = embeddings_fused + positional
+        # We'll add shape_emb as well.
+        final_embeddings = embeddings_fused + pos_embeddings_padded + shape_emb
+        # [B, max_segments, embed_dim]
 
         return final_embeddings
 
