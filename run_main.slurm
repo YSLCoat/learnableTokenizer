@@ -4,17 +4,13 @@
 #SBATCH --account=ec232
 #SBATCH --time=48:00:00
 #SBATCH --partition=ifi_accel    # To use the accelerator nodes
-#SBATCH --gpus-per-node=4
-#SBATCH --nodes=2
-#SBATCH --mem-per-gpu=30G
-#SBATCH --cpus-per-task=1
+#SBATCH --gpus=5
+#SBATCH --nodes=1
+#SBATCH --mem-per-gpu=25G
+#SBATCH --cpus-per-task=5
 
 # the important bit: unload all current modules (just in case) and load only the necessary ones
 module purge && \
 module load Python/3.10.8-GCCcore-12.2.0 CUDA/12.1.0 && \
 source /projects/ec232/venvs/g01env/bin/activate && \
-srun --ntasks=$((2*4)) python -m torch.distributed.run \
-     --nproc_per_node=4 \
-     --nnodes=2 \
-     --node_rank=${SLURM_NODEID} \
-     src/train.py "$@"
+python3 src/train.py "$@"
