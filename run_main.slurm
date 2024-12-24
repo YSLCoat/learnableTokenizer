@@ -13,4 +13,8 @@
 module purge && \
 module load Python/3.10.8-GCCcore-12.2.0 CUDA/12.1.0 && \
 source /projects/ec232/venvs/g01env/bin/activate && \
-python3 src/train.py "$@"
+srun --ntasks=$((2*4)) python -m torch.distributed.run \
+     --nproc_per_node=4 \
+     --nnodes=2 \
+     --node_rank=${SLURM_NODEID} \
+     src/train.py "$@"
