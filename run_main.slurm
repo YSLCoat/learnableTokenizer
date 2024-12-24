@@ -7,7 +7,7 @@
 #SBATCH --gpus-per-node=4
 #SBATCH --nodes=2
 #SBATCH --mem-per-gpu=30G
-#SBATCH --cpus-per-task=6
+#SBATCH --cpus-per-task=1
 
 # the important bit: unload all current modules (just in case) and load only the necessary ones
 module purge && \
