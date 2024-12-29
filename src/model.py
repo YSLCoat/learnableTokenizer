@@ -31,9 +31,7 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
         # Linear layer to project centroid coordinates to positional embeddings
         self.positional_embedding = nn.Linear(2, embed_dim)
 
-        # Optional fusion layer to project [mean_emb | max_emb] -> embed_dim
-        # If you plan to just concatenate mean + max and keep 2*embed_dim dimension,
-        # you can remove or comment out this fusion.
+        # Linear layer to project mean an max embeddings of superpixels to same embedding space       
         self.fusion = nn.Linear(2 * embed_dim, embed_dim)
 
     def forward(self, img):
@@ -76,7 +74,7 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
         embeddings_concat = torch.cat([embeddings_mean, embeddings_max], dim=-1)  
         # [B, max_segments, 2*C]
 
-        # -- 4) Optional: fuse the concatenated embeddings back to size embed_dim --
+        # -- 4) Fuse the concatenated embeddings back to size embed_dim --
         embeddings_fused = self.fusion(embeddings_concat)  # [B, max_segments, embed_dim]
 
         # -- 5) Positional embeddings from superpixel centroids --

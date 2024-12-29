@@ -42,6 +42,12 @@ def parse_input_args(input_args):
         help="Learning rate at end of scheduling"
     )
     parser.add_argument(
+        "--accumulation_steps",
+        default=8, 
+        type=float, 
+        help="Number of forward passes before backpropagation"
+    )
+    parser.add_argument(
         "--lr",
         default=1e-3, 
         type=float, 

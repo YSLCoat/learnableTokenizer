@@ -6,6 +6,7 @@ import torch.nn as nn
 from torchvision.transforms.v2 import RandAugment
 from data_utils import mixup_augmentation
 from timm.loss import SoftTargetCrossEntropy
+from timm.data import create_transform
 
 
 
@@ -34,7 +35,7 @@ class Trainer:
         train_data: DataLoader,
         val_data: DataLoader,
         optimizer: torch.optim.Optimizer,
-        # scheduler: torch.optim.lr_scheduler._LRScheduler,
+        #scheduler: torch.optim.lr_scheduler._LRScheduler,
         gpu_id: int,
         save_every: int,
     ) -> None:
@@ -43,8 +44,9 @@ class Trainer:
         self.train_data = train_data
         self.val_data = val_data
         self.optimizer = optimizer
-        # self.scheduler = scheduler
+        #self.scheduler = scheduler
         self.save_every = save_every
+        self.accumulation_steps = args.accumulation_steps
         self.mixup_augmentation = mixup_augmentation(args.n_classes)
         
         if args.train_from_checkpoint:
@@ -59,23 +61,42 @@ class Trainer:
             "val_acc": []
         }
         
-    def _run_batch(self, source, targets, train=False):
+    def _run_batch(self, source, targets, train=False, step_idx=None):
         if train:
-            self.model.train()  # Set the model to training mode
-            self.optimizer.zero_grad()
+            self.model.train()
             
+            # Only zero out gradients if this is the first step in a set of accumulation steps
+            if step_idx % self.accumulation_steps == 0:
+                self.optimizer.zero_grad()
+            
+            # Mixup
             source, targets = self.mixup_augmentation(source, targets)
-            
+
+            # Forward pass
             output = self.model(source)
-            loss = SoftTargetCrossEntropy()(output, targets)
-            loss.backward()
-            nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-            self.optimizer.step()
-            # self.scheduler.step()
             
-            return loss.item(), output.argmax(dim=1)
+            # Compute loss
+            criterion = SoftTargetCrossEntropy()
+            loss = criterion(output, targets)
+            
+            # For logging, keep the raw loss, but scale the actual loss for backward
+            raw_loss = loss.item()
+            loss = loss / self.accumulation_steps
+
+            # Backward
+            loss.backward()
+
+            # Only step the optimizer every accumulation_steps
+            if (step_idx + 1) % self.accumulation_steps == 0:
+                nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                self.optimizer.step()
+                # self.scheduler.step()  # If you have a scheduler, step it here as well.
+
+            # Return the *unscaled* loss for logging, and predictions
+            return raw_loss, output.argmax(dim=1)
+        
         else:
-            self.model.eval()  # Set the model to evaluation mode
+            self.model.eval()
             with torch.no_grad():
                 output = self.model(source)
                 loss = torch.nn.CrossEntropyLoss()(output, targets)
@@ -83,23 +104,29 @@ class Trainer:
 
     def _run_epoch(self, epoch):
         b_sz = len(next(iter(self.train_data))[0])
-        # print(f"[GPU{self.global_rank}] Epoch {epoch} | Batchsize: {b_sz} | Steps: {len(self.train_data)}")
+        print(f"[GPU{self.gpu_id}] Epoch {epoch} | Batchsize: {b_sz} | Steps: {len(self.train_data)}")
         self.train_data.sampler.set_epoch(epoch)
         
         train_loss = 0.0
         correct_train = 0
         total_train = 0
-        for source, targets in tqdm(self.train_data):
+        
+        # Enumerate so we get batch index (i)
+        for i, (source, targets) in enumerate(tqdm(self.train_data)):
             source = source.to(self.gpu_id)
             targets = targets.to(self.gpu_id)
-            loss, preds = self._run_batch(source, targets, train=True)
+            
+            # Pass i as step_idx
+            loss, preds = self._run_batch(source, targets, train=True, step_idx=i)
+            
             train_loss += loss
             correct_train += (preds == targets).sum().item()
             total_train += targets.size(0)
-            
+        
         train_loss /= len(self.train_data)
         train_accuracy = correct_train / total_train
         
+        # Validation loop remains the same
         val_loss = 0.0
         correct_val = 0
         total_val = 0
@@ -121,6 +148,7 @@ class Trainer:
             f"val_loss: {val_loss:.4f} | "
             f"val_acc: {val_accuracy:.4f}"
         )
+
         
     def _save_checkpoint(self, epoch):
         ckp = self.model.module.state_dict()
