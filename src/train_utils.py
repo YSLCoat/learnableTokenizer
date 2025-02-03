@@ -1,12 +1,15 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
+
+import torchvision
+torchvision.disable_beta_transforms_warning()
+
 import torch.nn.functional as F
 import torchvision.transforms.v2 as transforms
 import torch.nn as nn
 from torchvision.transforms.v2 import RandAugment
 from data_utils import mixup_augmentation
 from timm.loss import SoftTargetCrossEntropy
-
 
 
 from torch.utils.data.distributed import DistributedSampler
