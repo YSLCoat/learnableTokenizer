@@ -35,21 +35,6 @@ class VoronoiPropagation(nn.Module):
         
         # Set bandwidth / sigma for kernel
         self.std = self.C / (self.H * self.W)**0.5
-        
-        self.convert_to_greyscale = torchvision.transforms.Grayscale(num_output_channels=1)
-
-    def compute_gradient_map(self, x):
-        # Sobel kernels for single-channel input
-        sobel_x = torch.tensor([[[[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]]], device=x.device, dtype=x.dtype)
-        sobel_y = torch.tensor([[[[-1, -2, -1], [0, 0, 0], [1, 2, 1]]]], device=x.device, dtype=x.dtype)
-        
-        # Apply Sobel filters
-        grad_x = F.conv2d(x, sobel_x, padding=1)
-        grad_y = F.conv2d(x, sobel_y, padding=1)
-        
-        # Compute gradient magnitude
-        grad_map = torch.sqrt(grad_x.pow(2) + grad_y.pow(2))
-        return grad_map
 
     def place_centroids_on_grid(self, batch_size):
         num_cols = int(math.sqrt(self.C * self.W / self.H))
@@ -160,16 +145,10 @@ class VoronoiPropagation(nn.Module):
         
         return mask
         
-    def forward(self, x):
+    def forward(self, x, grad_map):
         B, C_in, H, W = x.shape
         
-        if C_in == 3:
-            grayscale_image = self.convert_to_greyscale(x)
-        else:
-            grayscale_image = x
-        
-        # Compute the gradient map from grayscale image
-        grad_map = self.compute_gradient_map(grayscale_image)
+        grad_map = grad_map.unsqueeze(1)
         
         # Place centroids on a grid
         centroids = self.place_centroids_on_grid(B)
@@ -181,7 +160,7 @@ class VoronoiPropagation(nn.Module):
         mask = self.distance_weighted_propagation(centroids, grad_map, x)
         
         # return grad_map, centroids, mask, spixel_features
-        return grad_map, centroids, mask
+        return centroids, mask
 
     
 class BoundaryPathFinder(nn.Module):
