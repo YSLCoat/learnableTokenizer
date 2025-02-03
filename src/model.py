@@ -12,20 +12,19 @@ from torch_scatter import scatter_mean, scatter_max
 
 class DifferentiableSuperpixelTokenizer(nn.Module):
     def __init__(self, max_segments, n_channels=3, sobel_init=True, embed_dim=768,
-                 use_positional_embeddings=True, reconstruction=False):
+                 use_positional_embeddings=True, reconstruction=False, device='cuda'):
         """
         Args:
             max_segments (int): Maximum number of superpixel segments.
             n_channels (int): Number of input image channels.
             sobel_init (bool): Whether to initialize the Sobel edge detection filter.
             embed_dim (int): Embedding dimension for the token representations.
-            use_positional_embeddings (bool): If True, add positional embeddings (for ViT training).
-                                                Otherwise, they are omitted.
-            reconstruction (bool): If True, add an MLP head to reconstruct the input RGB image
-                                   from the superpixel embeddings.
+            use_positional_embeddings (bool): If True, add positional embeddings.
+            reconstruction (bool): If True, add an MLP head to reconstruct the input RGB image.
+            device (str): Device to run the model.
         """
         super().__init__()
-        self.superpixel_tokenizer = VoronoiPropagation(max_segments)
+        self.superpixel_tokenizer = VoronoiPropagation(max_segments, height=224, width=224, device=device)
         self.max_segments = max_segments
         self.embed_dim = embed_dim
         self.use_positional_embeddings = use_positional_embeddings
@@ -61,10 +60,8 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
             # Stack Gx and Gy so that shape = (out_channels, in_channels, kernel_height, kernel_width)
             sobel_kernel = torch.stack([Gx, Gy])  # shape: (2, 3, 3)
             sobel_kernel = sobel_kernel.unsqueeze(1)  # shape: (2, 1, 3, 3)
-            # Assign these weights to the convolution layer
             self.edge_detection_conv.weight = nn.Parameter(sobel_kernel)
         
-        # Only create the positional embedding layer if it will be used.
         if self.use_positional_embeddings:
             self.positional_embedding = nn.Linear(2, embed_dim)
 
@@ -72,9 +69,9 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
         self.fusion = nn.Linear(2 * embed_dim, embed_dim)
 
         # Reconstruction head: an MLP similar to transformer MLPs.
-        # This MLP maps from embed_dim to n_channels (RGB) with an intermediate hidden dimension.
+        # This maps from embed_dim to n_channels with an intermediate hidden layer.
         if self.reconstruction:
-            hidden_dim = embed_dim * 4  # You can adjust this ratio as desired.
+            hidden_dim = embed_dim * 4  # Adjust multiplier as needed.
             self.reconstruction_head = nn.Sequential(
                 nn.Linear(embed_dim, hidden_dim),
                 nn.GELU(),
@@ -92,7 +89,6 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
                 A tuple (final_embeddings, reconstructed_img), where:
                     - final_embeddings: [B, max_segments, embed_dim]
                     - reconstructed_img: [B, n_channels, H, W]
-                      (Each pixel is assigned the reconstructed color of its superpixel.)
         """
         batch_size, n_channels, height, width = img.shape
 
@@ -101,7 +97,6 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
         B, C, Hf, Wf = features.shape
 
         # 2) Compute gradient map using Sobel.
-        # For single-channel processing, convert to grayscale (simple mean for now).
         gray_img = torch.mean(img, dim=1, keepdim=True)  # [B, 1, H, W]
         edges = self.edge_detection_conv(gray_img)  # [B, 2, H, W]
         grad_x = edges[:, 0, :, :]  # [B, H, W]
@@ -110,65 +105,42 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
     
         # 3) Tokenize into superpixels.
         centroid_coords, segments = self.superpixel_tokenizer(img, gradient_map)
-        # segments: [B, H, W]         - each pixel's superpixel ID
-        # centroid_coords: [B, n_centroids, 2]
+        # segments: [B, H, W]; centroid_coords: [B, n_centroids, 2]
 
         # 4) Compute similarity measure: S(∇x) = 1 - grad_map
         similarity = 1.0 - gradient_map
         similarity = torch.clamp(similarity, 0.0, 1.0)  # [B, H, W]
         
-        # Flatten tensors for scatter operations
         segments_flat = segments.view(B, -1)      # [B, H*W]
         similarity_flat = similarity.view(B, -1)  # [B, H*W]
 
-        # Count number of pixels per superpixel (n_K)
         n_K = torch.zeros((B, self.max_segments), device=img.device).scatter_add(
             dim=1,
             index=segments_flat,
             src=torch.ones_like(similarity_flat)
-        ).clamp(min=1)  # Avoid division by zero
-
-        # Sum similarity values per superpixel
+        ).clamp(min=1)
         similarity_sum = torch.zeros((B, self.max_segments), device=img.device).scatter_add(
             dim=1,
             index=segments_flat,
             src=similarity_flat
         )
-
-        # Compute W(k) as mean similarity per superpixel
         W_k = similarity_sum / n_K  # [B, max_segments]
 
-        # --- Aggregation of CNN features into superpixel embeddings ---
-        # Flatten features and segments for scatter operations:
+        # Aggregation of CNN features into superpixel embeddings:
         features_flat = features.permute(0, 2, 3, 1).reshape(-1, C)  # [B*Hf*Wf, C]
         segments_flat = segments.view(-1)  # [B*Hf*Wf]
-
-        # Create batch indices to offset segment IDs per batch
-        batch_indices = torch.arange(B, device=img.device).unsqueeze(1)  # [B, 1]
-        batch_indices = batch_indices.expand(B, Hf * Wf).reshape(-1)     # [B*Hf*Wf]
-
-        # Shift segment IDs so each batch has unique ID ranges:
+        batch_indices = torch.arange(B, device=img.device).unsqueeze(1).expand(B, Hf * Wf).reshape(-1)
         unique_segment_ids = batch_indices * self.max_segments + segments_flat  # [B*Hf*Wf]
         dim_size = B * self.max_segments
 
-        # 1) Compute scatter_mean (for average pooled features)
         embeddings_mean = scatter_mean(features_flat, unique_segment_ids, dim=0, dim_size=dim_size)
-        embeddings_mean = embeddings_mean.view(B, self.max_segments, C)  # [B, max_segments, C]
-
-        # 2) Compute scatter_max (for max pooled features)
+        embeddings_mean = embeddings_mean.view(B, self.max_segments, C)
         embeddings_max, _ = scatter_max(features_flat, unique_segment_ids, dim=0, dim_size=dim_size)
-        embeddings_max = embeddings_max.view(B, self.max_segments, C)  # [B, max_segments, C]
-
-        # 3) Concatenate mean & max embeddings
+        embeddings_max = embeddings_max.view(B, self.max_segments, C)
         embeddings_concat = torch.cat([embeddings_mean, embeddings_max], dim=-1)  # [B, max_segments, 2*C]
-
-        # 4) Fuse the concatenated embeddings to get z(x, k)
         embeddings_fused = self.fusion(embeddings_concat)  # [B, max_segments, embed_dim]
-
-        # --- Apply the Weighting: y(k) = z(x, k) · W(k) ---
         weighted_embeddings = embeddings_fused * W_k.unsqueeze(-1)  # [B, max_segments, embed_dim]
 
-        # Optionally add positional embeddings only if required (e.g., for ViT training)
         if self.use_positional_embeddings:
             centroids_normalized = centroid_coords.clone().float()
             centroids_normalized[:, :, 0] /= float(width)   # x / width
@@ -184,21 +156,23 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
         else:
             final_embeddings = weighted_embeddings
 
-        # --- Reconstruction branch (if enabled) ---
         if self.reconstruction:
-            # Pass the final embeddings through the MLP reconstruction head:
-            # superpixel_recon: [B, max_segments, n_channels]
+            # superpixel_recon has shape [B, max_segments, n_channels]
             superpixel_recon = self.reconstruction_head(final_embeddings)
-            # Using the segmentation mask (segments: [B, H, W]), "paint" each pixel with its superpixel's reconstructed color.
-            # Expand segments to shape [B, 1, H, W]
-            segments_exp = segments.unsqueeze(1)  # [B, 1, H, W]
-            # Permute superpixel_recon to shape [B, n_channels, max_segments]
-            superpixel_recon_perm = superpixel_recon.permute(0, 2, 1)  # [B, n_channels, max_segments]
-            # Gather along dimension 2 using the segmentation mask indices.
-            reconstructed_img = torch.gather(superpixel_recon_perm, dim=2, 
-                                              index=segments_exp.expand(-1, n_channels, -1, -1))
-            # reconstructed_img: [B, n_channels, H, W]
-            return final_embeddings, reconstructed_img
+ 
+            # segments: [B, H, W] with integer values in [0, max_segments-1]
+
+            #   Expand from [B, max_segments, n_channels] -> [B, H, max_segments, n_channels]
+            superpixel_recon_exp = superpixel_recon.unsqueeze(1).expand(-1, height, -1, -1)
+            
+            # segments is [B, H, W]. Unsqueeze to [B, H, W, 1] and then expand to [B, H, W, n_channels]
+            index = segments.unsqueeze(-1).expand(-1, -1, -1, n_channels)
+            
+            reconstructed_img = torch.gather(superpixel_recon_exp, dim=2, index=index)
+            
+            reconstructed_img = reconstructed_img.permute(0, 3, 1, 2)
+            
+            return final_embeddings, reconstructed_img, segments
 
         return final_embeddings
 
