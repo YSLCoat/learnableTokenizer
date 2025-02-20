@@ -415,28 +415,21 @@ class BoundaryPathFinder(nn.Module):
         return grad_map, segmentation_mask, new_segmentation_mask
     
     
-class DifferentiableVoronoiPropagation(nn.Module):
-    def __init__(self, num_clusters=196, n_channels=3, embed_dim=192, height=224, width=224, device='cpu'):
+import math
+import torch
+import torch.nn as nn
+
+
+class SLICSegmentation(nn.Module):
+    def __init__(self, num_clusters=196, height=224, width=224, device='cpu'):
         """
         Args:
             num_clusters (int): Number of clusters (centroids) to initialize.
-            n_channels (int): Number of input channels (usually 3 for RGB).
-            embed_dim (int): Dimension of the feature embedding.
             height (int): Height of the input image.
             width (int): Width of the input image.
             device (str): Device to run the model ('cpu' or 'cuda').
         """
-        super(DifferentiableVoronoiPropagation, self).__init__()
-        
-        # CNN backbone to extract feature maps
-        self.cnn = nn.Sequential(
-            nn.Conv2d(n_channels, 64, kernel_size=3, stride=1, padding=1),  # Standard convolution
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.Conv2d(64, embed_dim, kernel_size=3, stride=1, padding=2, dilation=2),  # Dilated convolution
-            nn.BatchNorm2d(embed_dim),
-            nn.ReLU(),
-        )
+        super(SLICSegmentation, self).__init__()
         
         self.C = num_clusters
         self.H = height
@@ -445,26 +438,11 @@ class DifferentiableVoronoiPropagation(nn.Module):
         
         # Set bandwidth / sigma for kernel
         self.std = self.C / (self.H * self.W)**0.5
-        
-        self.convert_to_greyscale = torchvision.transforms.Grayscale(num_output_channels=1)
-
-    def compute_gradient_map(self, x):
-        # Sobel kernels for single-channel input
-        sobel_x = torch.tensor([[[[-1, 0, 1],
-                                  [-2, 0, 2],
-                                  [-1, 0, 1]]]], device=x.device, dtype=x.dtype)
-        sobel_y = torch.tensor([[[[-1, -2, -1],
-                                  [ 0,  0,  0],
-                                  [ 1,  2,  1]]]], device=x.device, dtype=x.dtype)
-        
-        grad_x = F.conv2d(x, sobel_x, padding=1)
-        grad_y = F.conv2d(x, sobel_y, padding=1)
-        
-        # Compute gradient magnitude
-        grad_map = torch.sqrt(grad_x.pow(2) + grad_y.pow(2))
-        return grad_map
 
     def place_centroids_on_grid(self, batch_size):
+        """
+        Places centroids (seeds) roughly evenly on a grid across the image.
+        """
         num_cols = int(math.sqrt(self.C * self.W / self.H))
         num_rows = int(math.ceil(self.C / num_cols))
 
@@ -486,6 +464,10 @@ class DifferentiableVoronoiPropagation(nn.Module):
         return centroids.unsqueeze(0).repeat(batch_size, 1, 1)
 
     def find_nearest_minima(self, centroids, grad_map, neighborhood_size=10):
+        """
+        Moves each centroid to the nearest local minimum of the gradient map
+        within a specified neighborhood.  Avoids collisions if possible.
+        """
         updated_centroids = []
         B, _, _ = centroids.shape
         
@@ -522,91 +504,143 @@ class DifferentiableVoronoiPropagation(nn.Module):
         
         return torch.stack(updated_centroids, dim=0)
 
-    def distance_weighted_propagation(self, centroids, grad_map, color_map, mean_feature_map, 
-                                      num_iters=50, gradient_weight=10.0, color_weight=10.0,
-                                      feature_weight=5.0, edge_exponent=4.0):
+    def SLIC(self, centroids, x, max_iter=2, m=10.0):
         """
-        Perform Voronoi-like propagation from centroids, guided by the gradient map,
-        color similarity, and mean feature map similarity.
+        Perform a SLIC-like clustering to generate superpixels.
         
         Args:
-            centroids (Tensor): Initial centroid positions.
-            grad_map (Tensor): Gradient magnitude map.
-            color_map (Tensor): Input image for color similarity.
-            mean_feature_map (Tensor): Single-channel mean of feature maps (B,1,H,W).
-            num_iters (int): Number of iterations to perform propagation.
-            gradient_weight (float): Weight for the gradient penalty.
-            color_weight (float): Weight for the color similarity penalty.
-            feature_weight (float): Weight for the feature similarity penalty.
-            edge_exponent (float): Exponent to amplify edge gradients.
-        
+            centroids (Tensor):  (B, C, 2) with (y, x) positions for each cluster.
+            x         (Tensor):  (B, C_in, H, W) input image (e.g., RGB or any feature).
+            max_iter    (int):   Number of SLIC iterations.
+            m         (float):   Weighting factor for spatial distance vs. color distance.
+
         Returns:
-            Tensor: Final segmentation mask.
+            mask (Tensor): (B, H, W) of integer cluster assignments for each pixel.
         """
-        B, _, H, W = grad_map.shape
-        mask = torch.full((B, H, W), fill_value=-1, device=grad_map.device)  # Label mask
-        dist_map = torch.full((B, H, W), fill_value=float('inf'), device=grad_map.device)  # Distance map
-        
-        for batch_idx in range(B):
-            for idx, (cy, cx) in enumerate(centroids[batch_idx]):
-                mask[batch_idx, int(cy), int(cx)] = idx
-                dist_map[batch_idx, int(cy), int(cx)] = 0.0
-        
-        # 4-connected neighbors (dy, dx)
-        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-        
-        # Amplify the impact of the gradient map
-        weighted_grad_map = (grad_map ** edge_exponent) * gradient_weight
-
-        for _ in range(num_iters):
-            for dy, dx in directions:
-                # Shift the distance and mask maps
-                shifted_dist = torch.roll(dist_map, shifts=(dy, dx), dims=(1, 2))
-                shifted_mask = torch.roll(mask, shifts=(dy, dx), dims=(1, 2))
-                
-                # Color difference
-                rolled_color_map = torch.roll(color_map, shifts=(dy, dx), dims=(2, 3))
-                color_diff = torch.abs(color_map - rolled_color_map).sum(dim=1)  # B,H,W
-
-                # Feature difference
-                rolled_feature_map = torch.roll(mean_feature_map, shifts=(dy, dx), dims=(2, 3))
-                feat_diff = torch.abs(mean_feature_map - rolled_feature_map).squeeze(1)  # B,H,W
-
-                # Combine distances
-                weighted_dist = shifted_dist + weighted_grad_map[:, 0, :, :] + color_diff * color_weight + feat_diff * feature_weight
-                
-                # Update where we found a lower cumulative cost
-                update_mask = weighted_dist < dist_map
-                dist_map[update_mask] = weighted_dist[update_mask]
-                mask[update_mask] = shifted_mask[update_mask]
-        
-        return mask
-        
-    def forward(self, x):
         B, C_in, H, W = x.shape
         
-        # Convert to grayscale if input is RGB
-        if C_in == 3:
-            grayscale_image = self.convert_to_greyscale(x)
-        else:
-            grayscale_image = x
+        # We'll define the superpixel spacing, S, as ~sqrt(area / num_clusters).
+        S = int(math.sqrt(H * W / self.C) + 0.5)
+
+        # Create label map (-1 initially) and distance map (inf initially).
+        label_map = torch.full((B, H, W), -1, device=self.device, dtype=torch.long)
+        distance_map = torch.full((B, H, W), float('inf'), device=self.device)
+        
+        # Extract integer centroid coordinates
+        # (We round them so we can index directly into the image.)
+        yc = centroids[..., 0].round().long()
+        xc = centroids[..., 1].round().long()
+        
+        # Initialize "centroid colors" by sampling from x at those coords
+        # shape: (B, C, C_in)
+        # We'll do a gather for each batch to handle in a simple loop.
+        centroid_colors = []
+        for b_idx in range(B):
+            colors_b = []
+            for c_idx in range(self.C):
+                yy = yc[b_idx, c_idx].clamp(0, H - 1)
+                xx = xc[b_idx, c_idx].clamp(0, W - 1)
+                colors_b.append(x[b_idx, :, yy, xx])
+            centroid_colors.append(torch.stack(colors_b, dim=0))
+        centroid_colors = torch.stack(centroid_colors, dim=0)  # (B, C, C_in)
+        
+        # Iterative update
+        for _ in range(max_iter):
+            # Step 1: Assign pixels to clusters within a local window of size ~ 2S
+            label_map.fill_(-1)
+            distance_map.fill_(float('inf'))
             
-        # Extract feature maps
-        feature_maps = self.cnn(x)
+            for b_idx in range(B):
+                for c_idx in range(self.C):
+                    cy = yc[b_idx, c_idx].item()
+                    cx = xc[b_idx, c_idx].item()
+                    
+                    # Neighborhood bounds
+                    y_min = max(0, cy - S)
+                    y_max = min(H, cy + S)
+                    x_min = max(0, cx - S)
+                    x_max = min(W, cx + S)
+                    
+                    # Extract color patch
+                    color_patch = x[b_idx, :, y_min:y_max, x_min:x_max]
+                    
+                    # Distance in color space
+                    c_col = centroid_colors[b_idx, c_idx].unsqueeze(-1).unsqueeze(-1)
+                    # shape (C_in, 1, 1)
+                    color_dist = (color_patch - c_col).pow(2).sum(dim=0).sqrt()
+                    
+                    # Distance in (y, x) / spatial space
+                    yy, xx = torch.meshgrid(
+                        torch.arange(y_min, y_max, device=self.device),
+                        torch.arange(x_min, x_max, device=self.device),
+                        indexing='ij'
+                    )
+                    spatial_dist = torch.sqrt((yy - cy)**2 + (xx - cx)**2)
+
+                    # Combined distance (the 'm / S' factor for balancing color vs. spatial)
+                    dist = color_dist + (m / S) * spatial_dist
+                    
+                    # Update where we get smaller distance
+                    mask_region = distance_map[b_idx, y_min:y_max, x_min:x_max] > dist
+                    distance_map[b_idx, y_min:y_max, x_min:x_max][mask_region] = dist[mask_region]
+                    label_map[b_idx, y_min:y_max, x_min:x_max][mask_region] = c_idx
+            
+            # Step 2: Update cluster centroids (position + color)
+            new_yc = yc.clone()
+            new_xc = xc.clone()
+            new_centroid_colors = centroid_colors.clone()
+            
+            for b_idx in range(B):
+                for c_idx in range(self.C):
+                    # All pixels assigned to cluster c_idx
+                    mask_cluster = (label_map[b_idx] == c_idx)
+                    if mask_cluster.any():
+                        # Pixel coords
+                        y_coords, x_coords = torch.nonzero(mask_cluster, as_tuple=True)
+                        
+                        # Update centroid position
+                        cy_new = torch.mean(y_coords.float())
+                        cx_new = torch.mean(x_coords.float())
+                        
+                        # Clamp + round
+                        cy_new = cy_new.clamp(0, H - 1).round().long()
+                        cx_new = cx_new.clamp(0, W - 1).round().long()
+                        
+                        new_yc[b_idx, c_idx] = cy_new
+                        new_xc[b_idx, c_idx] = cx_new
+                        
+                        # Update centroid color
+                        color_vals = x[b_idx, :, y_coords, x_coords]
+                        new_centroid_colors[b_idx, c_idx] = color_vals.mean(dim=1)
+                    # else: no pixels assigned -> keep old
         
-        # Compute mean of feature maps across the channel dimension
-        mean_feature_map = feature_maps.mean(dim=1, keepdim=True)  # B,1,H,W
+            yc = new_yc
+            xc = new_xc
+            centroid_colors = new_centroid_colors
         
-        # Compute the gradient map from grayscale image
-        grad_map = self.compute_gradient_map(grayscale_image)
+        return label_map
+
+    def forward(self, x, grad_map):
+        """
+        Forward pass:
+          1) Initialize centroids on a grid.
+          2) Optionally move them to local minima of grad_map.
+          3) Run SLIC-like iterative assignment and update.
+          4) Return final centroids and assignment mask.
+        """
+        B, C_in, H, W = x.shape
         
-        # Place centroids on a grid
+        # Make sure grad_map has shape (B, 1, H, W)
+        if grad_map.ndim == 3:
+            grad_map = grad_map.unsqueeze(1)
+        
+        # 1) Place centroids
         centroids = self.place_centroids_on_grid(B)
         
-        # Move centroids to nearest local minima
+        # 2) Move centroids to nearest local minima in grad_map
         centroids = self.find_nearest_minima(centroids, grad_map)
         
-        # Perform distance-weighted propagation incorporating mean feature map
-        mask = self.distance_weighted_propagation(centroids, grad_map, x, mean_feature_map)
+        # 3) SLIC
+        mask = self.SLIC(centroids, x, max_iter=2, m=10.0)
         
-        return grad_map, centroids, mask, feature_maps
+        return centroids, mask

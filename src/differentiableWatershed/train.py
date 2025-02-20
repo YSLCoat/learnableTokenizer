@@ -69,7 +69,7 @@ class VoronoiPropagation(nn.Module):
             num_clusters (int): Number of clusters (centroids) to initialize.
             height (int): Height of the input image.
             width (int): Width of the input image.
-            device (str): Device to run the model ('cpu' or 'cuda').
+            device (str): Device to run the model ('cpu' or 'cpu').
         """
         super(VoronoiPropagation, self).__init__()
         
@@ -206,6 +206,493 @@ class VoronoiPropagation(nn.Module):
         
         # return grad_map, centroids, mask, spixel_features
         return centroids, mask
+    
+    
+class BoundaryPathFinder(nn.Module):
+    def __init__(self, num_segments_row=8, num_segments_col=8, height=224, width=224, device='cpu'):
+        super(BoundaryPathFinder, self).__init__()
+        
+        self.num_segments_row = num_segments_row
+        self.num_segments_col = num_segments_col
+        self.H = height
+        self.W = width
+        self.device = device
+        
+        # Move offsets for dynamic programming
+        self.move_offsets = torch.tensor([-1, 0, 1], device=device)
+    
+    def initialize_grid(self, batch_size):
+        # Create grid labels
+        rows = torch.arange(self.H, device=self.device).unsqueeze(1)
+        cols = torch.arange(self.W, device=self.device).unsqueeze(0)
+
+        row_labels = rows // (self.H // self.num_segments_row)
+        col_labels = cols // (self.W // self.num_segments_col)
+
+        labels = (row_labels * self.num_segments_col + col_labels).to(torch.int32)
+        labels = labels.expand(batch_size, -1, -1)  # Shape: (B, H, W)
+
+        return labels
+    
+    def adjust_boundaries(self, grad_map, segmentation_mask, band_width=5):
+        """
+        Adjust boundary lines to align with the highest gradients while keeping the number of segments constant.
+        """
+        B, H, W = segmentation_mask.shape
+        device = grad_map.device
+
+        # Prepare indices
+        y_indices = torch.arange(H, device=device)
+        x_indices = torch.arange(W, device=device)
+
+        # Initialize boundary masks
+        boundary_masks_vertical = torch.zeros((B, H, W), dtype=torch.bool, device=device)
+        boundary_masks_horizontal = torch.zeros((B, H, W), dtype=torch.bool, device=device)
+
+        # Vertical boundaries
+        x_inits = torch.tensor([i * (W // self.num_segments_col) for i in range(1, self.num_segments_col)], device=device).clamp(0, W - 1)
+        num_vertical_paths = x_inits.size(0)
+        for b in range(B):
+            grad_map_b = grad_map[b, 0]  # Shape: (H, W)
+            vertical_paths = self.find_optimal_vertical_paths(grad_map_b, x_inits, band_width)  # Shape: (num_vertical_paths, H)
+            # Mark vertical boundaries
+            for i in range(num_vertical_paths):
+                boundary_masks_vertical[b, y_indices, vertical_paths[i]] = True
+
+        # Horizontal boundaries
+        y_inits = torch.tensor([i * (H // self.num_segments_row) for i in range(1, self.num_segments_row)], device=device).clamp(0, H - 1)
+        num_horizontal_paths = y_inits.size(0)
+        for b in range(B):
+            grad_map_b = grad_map[b, 0]  # Shape: (H, W)
+            horizontal_paths = self.find_optimal_horizontal_paths(grad_map_b, y_inits, band_width)  # Shape: (num_horizontal_paths, W)
+            # Mark horizontal boundaries
+            for i in range(num_horizontal_paths):
+                boundary_masks_horizontal[b, horizontal_paths[i], x_indices] = True
+
+        # Compute vertical labels
+        vertical_boundaries_int = boundary_masks_vertical.to(torch.int32)
+        vertical_labels = torch.cumsum(vertical_boundaries_int, dim=2)
+
+        # Compute horizontal labels
+        horizontal_boundaries_int = boundary_masks_horizontal.to(torch.int32)
+        horizontal_labels = torch.cumsum(horizontal_boundaries_int, dim=1)
+
+        # Compute final region labels
+        num_vertical_segments = self.num_segments_col
+        num_horizontal_segments = self.num_segments_row
+
+        new_segmentation_masks = vertical_labels + num_vertical_segments * horizontal_labels
+
+        return new_segmentation_masks  # Shape: (B, H, W)
+
+    def find_optimal_vertical_paths(self, grad_map, x_inits, band_width):
+        """
+        Find the optimal vertical paths around the initial x positions using dynamic programming.
+        """
+        
+        H, W = grad_map.shape
+        device = grad_map.device
+        num_paths = x_inits.size(0)
+
+        # Define bands around x_inits
+        x_offsets = torch.arange(-band_width, band_width + 1, device=device)
+        x_indices = x_inits.unsqueeze(1) + x_offsets.unsqueeze(0)  # Shape: (num_paths, num_positions)
+        x_indices = x_indices.clamp(0, W - 1).long()
+        num_positions = x_indices.size(1)
+
+        # Initialize cost and path matrices
+        cost = torch.full((H, num_paths, num_positions), float('inf'), device=device)
+        path = torch.zeros((H, num_paths, num_positions), dtype=torch.long, device=device)
+
+        # First row
+        grad_row = grad_map[0].unsqueeze(0).expand(num_paths, -1)  # Shape: (num_paths, W)
+        cost[0] = -grad_row.gather(1, x_indices)  # Shape: (num_paths, num_positions)
+
+        # Precompute position indices
+        positions = torch.arange(num_positions, device=device).unsqueeze(0).expand(num_paths, -1)  # Shape: (num_paths, num_positions)
+
+        # Dynamic programming
+        for y in range(1, H):
+            # Pad the previous cost for easy indexing
+            padded_prev_cost = torch.cat([
+                torch.full((num_paths, 1), float('inf'), device=device),
+                cost[y - 1],
+                torch.full((num_paths, 1), float('inf'), device=device)
+            ], dim=1)  # Shape: (num_paths, num_positions + 2)
+
+            # Indices for possible moves: left (-1), stay (0), right (+1)
+            move_offsets = torch.tensor([-1, 0, 1], device=device)
+            neighbor_indices = positions.unsqueeze(2) + move_offsets.view(1, 1, -1)  # Shape: (num_paths, num_positions, 3)
+            neighbor_indices = neighbor_indices.clamp(0, num_positions - 1)
+
+            # Adjust for padding
+            neighbor_indices_padded = neighbor_indices + 1  # Adjust for the padding
+            neighbor_indices_padded = neighbor_indices_padded.long()
+
+            # Adjust dimensions of padded_prev_cost
+            padded_prev_cost_expanded = padded_prev_cost.unsqueeze(1).expand(-1, num_positions, -1)
+
+            # Gather costs for possible moves
+            prev_costs = padded_prev_cost_expanded.gather(2, neighbor_indices_padded)  # Shape: (num_paths, num_positions, 3)
+
+            # Find the minimum cost among the neighbors
+            min_prev_costs, min_indices = prev_costs.min(dim=2)  # Shape: (num_paths, num_positions)
+
+            # Update cost and path
+            grad_row = grad_map[y].unsqueeze(0).expand(num_paths, -1)  # Shape: (num_paths, W)
+            current_grad = -grad_row.gather(1, x_indices)
+            cost[y] = min_prev_costs + current_grad  # Shape: (num_paths, num_positions)
+            path[y] = neighbor_indices.gather(2, min_indices.unsqueeze(2)).squeeze(2)  # Shape: (num_paths, num_positions)
+
+        # Backtracking to find the optimal paths
+        idx = cost[-1].argmin(dim=1)  # Shape: (num_paths,)
+        optimal_paths = []
+        for y in reversed(range(H)):
+            optimal_paths.append(x_indices[torch.arange(num_paths), idx])  # Shape: (num_paths,)
+            idx = path[y, torch.arange(num_paths), idx]
+        optimal_paths = torch.stack(optimal_paths[::-1], dim=1)  # Shape: (num_paths, H)
+        return optimal_paths  # Shape: (num_paths, H)
+
+    def find_optimal_horizontal_paths(self, grad_map, y_inits, band_width):
+        """
+        Find the optimal horizontal paths around the initial y positions using dynamic programming.
+        """
+        H, W = grad_map.shape
+        device = grad_map.device
+        num_paths = y_inits.size(0)
+
+        # Define bands around y_inits
+        y_offsets = torch.arange(-band_width, band_width + 1, device=device)
+        y_indices = y_inits.unsqueeze(1) + y_offsets.unsqueeze(0)  # Shape: (num_paths, num_positions)
+        y_indices = y_indices.clamp(0, H - 1).long()
+        num_positions = y_indices.size(1)
+
+        # Initialize cost and path matrices
+        cost = torch.full((W, num_paths, num_positions), float('inf'), device=device)
+        path = torch.zeros((W, num_paths, num_positions), dtype=torch.long, device=device)
+
+        # First column
+        grad_col = grad_map[:, 0].unsqueeze(0).expand(num_paths, -1)  # Shape: (num_paths, H)
+        cost[0] = -grad_col.gather(1, y_indices)  # Shape: (num_paths, num_positions)
+
+        # Precompute position indices
+        positions = torch.arange(num_positions, device=device).unsqueeze(0).expand(num_paths, -1)  # Shape: (num_paths, num_positions)
+
+        # Dynamic programming
+        for x in range(1, W):
+            # Pad the previous cost for easy indexing
+            padded_prev_cost = torch.cat([
+                torch.full((num_paths, 1), float('inf'), device=device),
+                cost[x - 1],
+                torch.full((num_paths, 1), float('inf'), device=device)
+            ], dim=1)  # Shape: (num_paths, num_positions + 2)
+
+            # Indices for possible moves: up (-1), stay (0), down (+1)
+            move_offsets = torch.tensor([-1, 0, 1], device=device)
+            neighbor_indices = positions.unsqueeze(2) + move_offsets.view(1, 1, -1)  # Shape: (num_paths, num_positions, 3)
+            neighbor_indices = neighbor_indices.clamp(0, num_positions - 1)
+
+            # Adjust for padding
+            neighbor_indices_padded = neighbor_indices + 1  # Adjust for the padding
+            neighbor_indices_padded = neighbor_indices_padded.long()
+
+            # Adjust dimensions of padded_prev_cost
+            padded_prev_cost_expanded = padded_prev_cost.unsqueeze(1).expand(-1, num_positions, -1)
+
+            # Gather costs for possible moves
+            prev_costs = padded_prev_cost_expanded.gather(2, neighbor_indices_padded)  # Shape: (num_paths, num_positions, 3)
+
+            # Find the minimum cost among the neighbors
+            min_prev_costs, min_indices = prev_costs.min(dim=2)  # Shape: (num_paths, num_positions)
+
+            # Update cost and path
+            grad_col = grad_map[:, x].unsqueeze(0).expand(num_paths, -1)  # Shape: (num_paths, H)
+            current_grad = -grad_col.gather(1, y_indices)
+            cost[x] = min_prev_costs + current_grad  # Shape: (num_paths, num_positions)
+            path[x] = neighbor_indices.gather(2, min_indices.unsqueeze(2)).squeeze(2)  # Shape: (num_paths, num_positions)
+
+        # Backtracking to find the optimal paths
+        idx = cost[-1].argmin(dim=1)  # Shape: (num_paths,)
+        optimal_paths = []
+        for x in reversed(range(W)):
+            optimal_paths.append(y_indices[torch.arange(num_paths), idx])  # Shape: (num_paths,)
+            idx = path[x, torch.arange(num_paths), idx]
+        optimal_paths = torch.stack(optimal_paths[::-1], dim=1)  # Shape: (num_paths, W)
+        return optimal_paths  # Shape: (num_paths, W)
+
+    
+    def forward(self, x, grad_map):
+        B, C, H, W = x.shape
+        if H != self.H or W != self.W:
+            raise ValueError(f"Input image size must match initialized size: ({self.H}, {self.W})")
+
+        # Initialize grid segmentation
+        segmentation_mask = self.initialize_grid(B)  # Shape: (B, H, W)
+
+        grad_map = grad_map.unsqueeze(1)
+        # Adjust boundaries
+        new_segmentation_mask = self.adjust_boundaries(grad_map, segmentation_mask)
+        
+        return 1, new_segmentation_mask
+        
+        # # -------------------------------
+        # # Estimate Centroids for each segment
+        # # -------------------------------
+        # # The total number of segments is the product of the number of rows and columns.
+        # num_segments = self.num_segments_row * self.num_segments_col
+        # device = new_segmentation_mask.device
+
+        # # Create coordinate grids for y and x.
+        # y_grid = torch.arange(H, device=device).unsqueeze(1).expand(H, W)
+        # x_grid = torch.arange(W, device=device).unsqueeze(0).expand(H, W)
+        # # Expand to batch dimension.
+        # y_grid = y_grid.unsqueeze(0).expand(B, H, W)
+        # x_grid = x_grid.unsqueeze(0).expand(B, H, W)
+
+        # centroids_list = []
+        # for b in range(B):
+        #     # Flatten the segmentation mask and coordinate grids for the current batch.
+        #     seg_flat = new_segmentation_mask[b].view(-1).long()  # Ensure type is long for torch.bincount.
+        #     y_flat = y_grid[b].view(-1).float()
+        #     x_flat = x_grid[b].view(-1).float()
+            
+        #     # Compute the number of pixels in each segment.
+        #     counts = torch.bincount(seg_flat, minlength=num_segments).float()
+        #     # Sum of y and x coordinates for each segment.
+        #     sum_y = torch.bincount(seg_flat, weights=y_flat, minlength=num_segments)
+        #     sum_x = torch.bincount(seg_flat, weights=x_flat, minlength=num_segments)
+            
+        #     # Avoid division by zero. (In a well-behaved segmentation, every segment should have at least one pixel.)
+        #     counts = counts.clamp(min=1)
+        #     centroids_b = torch.stack([sum_y / counts, sum_x / counts], dim=1)  # Each centroid as (y, x)
+        #     centroids_list.append(centroids_b)
+        
+        # centroids = torch.stack(centroids_list, dim=0)  # Shape: (B, num_segments, 2)
+        
+        # return centroids, new_segmentation_mask
+        
+        
+import math
+import torch
+import torch.nn as nn
+
+
+class SLICSegmentation(nn.Module):
+    def __init__(self, num_clusters=196, height=224, width=224, device='cpu'):
+        """
+        Args:
+            num_clusters (int): Number of clusters (centroids) to initialize.
+            height (int): Height of the input image.
+            width (int): Width of the input image.
+            device (str): Device to run the model ('cpu' or 'cpu').
+        """
+        super(SLICSegmentation, self).__init__()
+        
+        self.C = num_clusters
+        self.H = height
+        self.W = width
+        self.device = torch.device(device)
+        
+        # Set bandwidth / sigma for kernel
+        self.std = self.C / (self.H * self.W)**0.5
+
+    def place_centroids_on_grid(self, batch_size):
+        """
+        Places centroids (seeds) roughly evenly on a grid across the image.
+        """
+        num_cols = int(math.sqrt(self.C * self.W / self.H))
+        num_rows = int(math.ceil(self.C / num_cols))
+
+        grid_spacing_y = self.H / num_rows
+        grid_spacing_x = self.W / num_cols
+
+        centroids = []
+        for i in range(num_rows):
+            for j in range(num_cols):
+                if len(centroids) >= self.C:
+                    break
+                y = int((i + 0.5) * grid_spacing_y)
+                x = int((j + 0.5) * grid_spacing_x)
+                centroids.append([y, x])
+            if len(centroids) >= self.C:
+                break
+
+        centroids = torch.tensor(centroids, device=self.device).float()
+        return centroids.unsqueeze(0).repeat(batch_size, 1, 1)
+
+    def find_nearest_minima(self, centroids, grad_map, neighborhood_size=10):
+        """
+        Moves each centroid to the nearest local minimum of the gradient map
+        within a specified neighborhood.  Avoids collisions if possible.
+        """
+        updated_centroids = []
+        B, _, _ = centroids.shape
+        
+        for batch_idx in range(B):
+            updated_centroids_batch = []
+            occupied_positions = set()
+            for centroid in centroids[batch_idx]:
+                y, x = centroid
+                y_min = max(0, int(y) - neighborhood_size)
+                y_max = min(self.H, int(y) + neighborhood_size)
+                x_min = max(0, int(x) - neighborhood_size)
+                x_max = min(self.W, int(x) + neighborhood_size)
+                
+                neighborhood = grad_map[batch_idx, 0, y_min:y_max, x_min:x_max]
+                min_val = torch.min(neighborhood)
+                min_coords = torch.nonzero(neighborhood == min_val, as_tuple=False)
+                
+                # Iterate over all minima to find an unoccupied one
+                found = False
+                for coord in min_coords:
+                    new_y = y_min + coord[0].item()
+                    new_x = x_min + coord[1].item()
+                    position = (new_y, new_x)
+                    if position not in occupied_positions:
+                        occupied_positions.add(position)
+                        updated_centroids_batch.append([new_y, new_x])
+                        found = True
+                        break
+                if not found:
+                    # If all minima are occupied, keep the original position
+                    updated_centroids_batch.append([y.item(), x.item()])
+            
+            updated_centroids.append(torch.tensor(updated_centroids_batch, device=self.device))
+        
+        return torch.stack(updated_centroids, dim=0)
+
+    def SLIC(self, centroids, x, max_iter=2, m=10.0):
+        """
+        Perform a SLIC-like clustering to generate superpixels.
+        
+        Args:
+            centroids (Tensor):  (B, C, 2) with (y, x) positions for each cluster.
+            x         (Tensor):  (B, C_in, H, W) input image (e.g., RGB or any feature).
+            max_iter    (int):   Number of SLIC iterations.
+            m         (float):   Weighting factor for spatial distance vs. color distance.
+
+        Returns:
+            mask (Tensor): (B, H, W) of integer cluster assignments for each pixel.
+        """
+        B, C_in, H, W = x.shape
+        
+        # define the superpixel spacing, S, as ~sqrt(area / num_clusters).
+        S = int(math.sqrt(H * W / self.C) + 0.5)
+
+        label_map = torch.full((B, H, W), -1, device=self.device, dtype=torch.long)
+        distance_map = torch.full((B, H, W), float('inf'), device=self.device)
+        
+        # Extract integer centroid coordinates
+        # (round them so we can index directly into the image.)
+        yc = centroids[..., 0].round().long()
+        xc = centroids[..., 1].round().long()
+        
+        # Initialize "centroid colors" by sampling from x at those coords
+        # shape: (B, C, C_in)
+        batch_idx = torch.arange(B, device=self.device).unsqueeze(1).expand(B, self.C)
+        centroid_colors = x[batch_idx, :, yc, xc]  # shape (B, C, C_in)
+        
+        # Iterative update
+        for _ in range(max_iter):
+            # Step 1: Assign pixels to clusters within a local window of size ~ 2S
+            label_map.fill_(-1)
+            distance_map.fill_(float('inf'))
+            
+            for b_idx in range(B):
+                for c_idx in range(self.C):
+                    cy = yc[b_idx, c_idx].item()
+                    cx = xc[b_idx, c_idx].item()
+                    
+                    WINDOW_FACTOR = 2  # or 3
+                    y_min = max(0, cy - WINDOW_FACTOR * S)
+                    y_max = min(H, cy + WINDOW_FACTOR * S)
+                    x_min = max(0, cx - WINDOW_FACTOR * S)
+                    x_max = min(W, cx + WINDOW_FACTOR * S)
+                    
+                    # Extract color patch
+                    color_patch = x[b_idx, :, y_min:y_max, x_min:x_max]
+                    
+                    # Distance in color space
+                    c_col = centroid_colors[b_idx, c_idx].unsqueeze(-1).unsqueeze(-1)
+                    # shape (C_in, 1, 1)
+                    color_dist = (color_patch - c_col).pow(2).sum(dim=0).sqrt()
+                    
+                    # Distance in (y, x) / spatial space
+                    yy, xx = torch.meshgrid(
+                        torch.arange(y_min, y_max, device=self.device),
+                        torch.arange(x_min, x_max, device=self.device),
+                        indexing='ij'
+                    )
+                    spatial_dist = torch.sqrt((yy - cy)**2 + (xx - cx)**2)
+
+                    # Combined distance (the 'm / S' factor for balancing color vs. spatial)
+                    dist = color_dist + (m / S) * spatial_dist
+                    
+                    # Update where we get smaller distance
+                    mask_region = distance_map[b_idx, y_min:y_max, x_min:x_max] > dist
+                    distance_map[b_idx, y_min:y_max, x_min:x_max][mask_region] = dist[mask_region]
+                    label_map[b_idx, y_min:y_max, x_min:x_max][mask_region] = c_idx
+            
+            # Step 2: Update cluster centroids (position + color)
+            new_yc = yc.clone()
+            new_xc = xc.clone()
+            new_centroid_colors = centroid_colors.clone()
+            
+            for b_idx in range(B):
+                for c_idx in range(self.C):
+                    # All pixels assigned to cluster c_idx
+                    mask_cluster = (label_map[b_idx] == c_idx)
+                    if mask_cluster.any():
+                        # Pixel coords
+                        y_coords, x_coords = torch.nonzero(mask_cluster, as_tuple=True)
+                        
+                        # Update centroid position
+                        cy_new = torch.mean(y_coords.float())
+                        cx_new = torch.mean(x_coords.float())
+                        
+                        # Clamp + round
+                        cy_new = cy_new.clamp(0, H - 1).round().long()
+                        cx_new = cx_new.clamp(0, W - 1).round().long()
+                        
+                        new_yc[b_idx, c_idx] = cy_new
+                        new_xc[b_idx, c_idx] = cx_new
+                        
+                        # Update centroid color
+                        color_vals = x[b_idx, :, y_coords, x_coords]
+                        new_centroid_colors[b_idx, c_idx] = color_vals.mean(dim=1)
+                    # else: no pixels assigned -> keep old
+        
+            yc = new_yc
+            xc = new_xc
+            centroid_colors = new_centroid_colors
+        
+        return label_map
+
+    def forward(self, x, grad_map):
+        """
+        Forward pass:
+          1) Initialize centroids on a grid.
+          2) Optionally move them to local minima of grad_map.
+          3) Run SLIC-like iterative assignment and update.
+          4) Return final centroids and assignment mask.
+        """
+        B, C_in, H, W = x.shape
+        
+        # Make sure grad_map has shape (B, 1, H, W)
+        if grad_map.ndim == 3:
+            grad_map = grad_map.unsqueeze(1)
+        
+        # 1) Place centroids
+        centroids = self.place_centroids_on_grid(B)
+        
+        # 2) Move centroids to nearest local minima in grad_map
+        centroids = self.find_nearest_minima(centroids, grad_map)
+        
+        # 3) SLIC
+        mask = self.SLIC(centroids, x, max_iter=2, m=10.0)
+        
+        return centroids, mask
+
 
 
 # -------------------------------
@@ -213,7 +700,7 @@ class VoronoiPropagation(nn.Module):
 # -------------------------------
 class DifferentiableSuperpixelTokenizer(nn.Module):
     def __init__(self, max_segments, n_channels=3, sobel_init=True, embed_dim=768,
-                 use_positional_embeddings=True, reconstruction=False, device='cuda'):
+                 use_positional_embeddings=True, reconstruction=False, device='cpu'):
         """
         Args:
             max_segments (int): Maximum number of superpixel segments.
@@ -225,7 +712,9 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
             device (str): Device to run the model.
         """
         super().__init__()
-        self.superpixel_tokenizer = VoronoiPropagation(max_segments, height=224, width=224, device=device)
+        # self.superpixel_tokenizer = VoronoiPropagation(max_segments, height=224, width=224, device=device)
+        # self.superpixel_tokenizer = BoundaryPathFinder(14, 14, 224, 224, 'cpu')
+        self.superpixel_tokenizer = SLICSegmentation(num_clusters=196, height=224, width=224, device='cpu')
         self.max_segments = max_segments
         self.embed_dim = embed_dim
         self.use_positional_embeddings = use_positional_embeddings
@@ -306,6 +795,8 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
     
         # 3) Tokenize into superpixels.
         centroid_coords, segments = self.superpixel_tokenizer(img, gradient_map)
+        
+        print(segments.unique())
         # segments: [B, H, W]; centroid_coords: [B, n_centroids, 2]
 
         # 4) Compute similarity measure: S(∇x) = 1 - grad_map
@@ -432,7 +923,7 @@ train_loader = DataLoader(dataset_train, batch_size=32, shuffle=True, num_worker
 
 # Training setup
 NUM_CLUSTERS = 196
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cpu'#'cpu' if torch.cpu.is_available() else 'cpu'
 model = DifferentiableSuperpixelTokenizer(
     max_segments=NUM_CLUSTERS,
     n_channels=3,
