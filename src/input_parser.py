@@ -1,94 +1,11 @@
-# input_parser.py
 import argparse
-import sys
-import json
-import yaml
-import os
 
-def parse_input_args(input_args):
-    # First, create a parser that only parses --reproducibility_statement_file
-    initial_parser = argparse.ArgumentParser(description="Train model", add_help=False)
-    initial_parser.add_argument(
-        '--reproducibility_statement_file',
-        default=None,
-        help='Path to the reproducibility statement file (JSON or YAML). If provided, parameters are extracted from this file instead of the default values.'
-    )
+def get_args_parser():
+    parser = argparse.ArgumentParser('DeiT training and evaluation script', add_help=False)
+    parser.add_argument('--batch-size', default=64, type=int)
+    parser.add_argument('--epochs', default=300, type=int)
 
-    args, _ = initial_parser.parse_known_args(input_args)
-
-    parser = argparse.ArgumentParser(description="Train model")
-
-    # Define all the arguments
-    parser.add_argument(
-        "--data_subfolder_path", 
-        default=r"F:\data", 
-        help="Path to the data subfolder"
-    )
-    parser.add_argument(
-        "--data_folder_name", 
-        default=r"IN1k", 
-        help="Name of the data folder"
-    )
-    parser.add_argument(
-        "--lr_start",
-        default=1e-6, 
-        type=float, 
-        help="Learning rate at end of scheduling"
-    )
-    parser.add_argument(
-        "--lr_stop",
-        default=1e-5, 
-        type=float, 
-        help="Learning rate at end of scheduling"
-    )
-    parser.add_argument(
-        "--lr",
-        default=1e-3, 
-        type=float, 
-        help="Learning rate at end of scheduling"
-    )
-    parser.add_argument(
-        "--lr_scheduler_warmup",
-        default=0.05, 
-        type=float, 
-        help="Warmup ratio for scheduler"
-    )
-    parser.add_argument(
-        "--beta_1", 
-        default=0.9, 
-        type=float, 
-        help="Beta 1 parameter for AdamW optimizer"
-    )
-    parser.add_argument(
-        "--beta_2",
-        default=0.999,
-        type=float,
-        help="Beta 2 parameter for AdamW optimizer",
-    )
-    parser.add_argument(
-        "--weight_decay",
-        default=1e-2,
-        type=float,
-        help="Weight decay for AdamW optimizer",
-    )
-    parser.add_argument(
-        "--batch_size", 
-        default=64, 
-        type=int, 
-        help="Batch size"
-    )
-    parser.add_argument(
-        "--epochs", 
-        default=500, 
-        type=int, 
-        help="Number of epochs to train"
-    )
-    parser.add_argument(
-        "--save_every", 
-        default=1, 
-        type=int, 
-        help="Save model checkpoint every n epochs"
-    )
+    # Model parameters
     parser.add_argument(
         "--model_name",
         choices=[
@@ -100,70 +17,163 @@ def parse_input_args(input_args):
         type=str,
         help="Insert vit_small, vit_base, vit_large or vit_huge for presets. Enter a custom name if using custom parameters.",
     )
-    parser.add_argument(
-        "--n_classes", 
-        type=int, 
-        required=True, 
-        help="Number of output classes"
-    )
-    parser.add_argument(
-        "--n_channels", 
-        default=3, 
-        type=int, 
-        help="Number of input channels"
-    )
-    parser.add_argument(
-        "--img_size", 
-        default=224, 
-        type=int, 
-        help="Input image size"
-    )
-    parser.add_argument(
-        "--n_segments",
-        default=50,
-        type=int,
-        help="Number of segments for the tokenizer",
-    )
-    parser.add_argument(
-        "--pretrained_model_path",
-        help="Path to the pretrained model"
-    )
-    parser.add_argument(
-        "--train_from_checkpoint", 
-        action="store_true", 
-        help="Load model from checkpoint and continue training"
-    )
-    parser.add_argument(
-        '--reproducibility_statement_file',
-        default=None,
-        help='Path to the reproducibility statement file (JSON or YAML). If provided, parameters are extracted from this file instead of the default values.'
-    )
+    parser.add_argument('--input-size', default=224, type=int, help='largest possible images input size, test data size')
 
-    # If reproducibility_statement_file is provided, load the args from the file
-    if args.reproducibility_statement_file is not None:
-        # Load args from the file
-        file_ext = os.path.splitext(args.reproducibility_statement_file)[1]
-        if file_ext.lower() == '.json':
-            with open(args.reproducibility_statement_file, 'r') as f:
-                args_from_file = json.load(f)
-        elif file_ext.lower() in ['.yaml', '.yml']:
-            with open(args.reproducibility_statement_file, 'r') as f:
-                args_from_file = yaml.safe_load(f)
-        else:
-            raise ValueError('Unsupported file extension: {}'.format(file_ext))
+    parser.add_argument('--drop', type=float, default=0.0, metavar='PCT',
+                        help='Dropout rate (default: 0.)')
+    parser.add_argument('--drop-path', type=float, default=0.1, metavar='PCT',
+                        help='Drop path rate (default: 0.1)')
+    parser.add_argument('--n_patches', type=int, default=196,
+                        help="number of patches")
 
-        # Set defaults in parser using the parameters from the file
-        parser.set_defaults(**args_from_file)
+    parser.add_argument('--model-ema', action='store_true')
+    parser.add_argument('--no-model-ema', action='store_false', dest='model_ema')
+    parser.set_defaults(model_ema=True)
+    parser.add_argument('--model-ema-decay', type=float, default=0.99996, help='')
+    parser.add_argument('--model-ema-force-cpu', action='store_true', default=False, help='')
 
-    # Now parse all the arguments (command line args will override defaults)
-    args = parser.parse_args(input_args)
+    # Optimizer parameters
+    parser.add_argument('--opt', default='adamw', type=str, metavar='OPTIMIZER',
+                        help='Optimizer (default: "adamw"')
+    parser.add_argument('--opt-eps', default=1e-8, type=float, metavar='EPSILON',
+                        help='Optimizer Epsilon (default: 1e-8)')
+    parser.add_argument('--opt-betas', default=None, type=float, nargs='+', metavar='BETA',
+                        help='Optimizer Betas (default: None, use opt default)')
+    parser.add_argument('--clip-grad', type=float, default=None, metavar='NORM',
+                        help='Clip gradient norm (default: None, no clipping)')
+    parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
+                        help='SGD momentum (default: 0.9)')
+    parser.add_argument('--weight-decay', type=float, default=0.05,
+                        help='weight decay (default: 0.05)')
+    # Learning rate schedule parameters
+    parser.add_argument('--sched', default='cosine', type=str, metavar='SCHEDULER',
+                        help='LR scheduler (default: "cosine"')
+    parser.add_argument('--lr', type=float, default=5e-4, metavar='LR',
+                        help='learning rate (default: 5e-4)')
+    parser.add_argument('--lr-noise', type=float, nargs='+', default=None, metavar='pct, pct',
+                        help='learning rate noise on/off epoch percentages')
+    parser.add_argument('--lr-noise-pct', type=float, default=0.67, metavar='PERCENT',
+                        help='learning rate noise limit percent (default: 0.67)')
+    parser.add_argument('--lr-noise-std', type=float, default=1.0, metavar='STDDEV',
+                        help='learning rate noise std-dev (default: 1.0)')
+    parser.add_argument('--warmup-lr', type=float, default=1e-6, metavar='LR',
+                        help='warmup learning rate (default: 1e-6)')
+    parser.add_argument('--min-lr', type=float, default=1e-5, metavar='LR',
+                        help='lower lr bound for cyclic schedulers that hit 0 (1e-5)')
 
-    # After parsing the args, save them to a JSON file
-    save_args_to_json(args)
+    parser.add_argument('--decay-epochs', type=float, default=30, metavar='N',
+                        help='epoch interval to decay LR')
 
-    return args
+    # No warmups!
+    parser.add_argument('--warmup-epochs', type=int, default=0, metavar='N',
+                        help='epochs to warmup LR, if scheduler supports')
+    parser.add_argument('--cooldown-epochs', type=int, default=10, metavar='N',
+                        help='epochs to cooldown LR at min_lr, after cyclic schedule ends')
+    parser.add_argument('--patience-epochs', type=int, default=10, metavar='N',
+                        help='patience epochs for Plateau LR scheduler (default: 10')
+    parser.add_argument('--decay-rate', '--dr', type=float, default=0.1, metavar='RATE',
+                        help='LR decay rate (default: 0.1)')
 
-def save_args_to_json(args, filename='reproducibility_statement.json'):
-    args_dict = vars(args)
-    with open(filename, 'w') as f:
-        json.dump(args_dict, f, indent=4)
+    # Augmentation parameters
+    parser.add_argument('--color-jitter', type=float, default=0.4, metavar='PCT',
+                        help='Color jitter factor (default: 0.4)')
+    parser.add_argument('--aa', type=str, default='rand-m9-mstd0.5-inc1', metavar='NAME',
+                        help='Use AutoAugment policy. "v0" or "original". " + \
+                             "(default: rand-m9-mstd0.5-inc1)'),
+    parser.add_argument('--smoothing', type=float, default=0.1, help='Label smoothing (default: 0.1)')
+    parser.add_argument('--train-interpolation', type=str, default='bicubic',
+                        help='Training interpolation (random, bilinear, bicubic default: "bicubic")')
+
+    parser.add_argument('--repeated-aug', action='store_true')
+    parser.add_argument('--no-repeated-aug', action='store_false', dest='repeated_aug')
+    parser.set_defaults(repeated_aug=True)
+
+    # * Random Erase params
+    parser.add_argument('--reprob', type=float, default=0.25, metavar='PCT',
+                        help='Random erase prob (default: 0.25)')
+    parser.add_argument('--remode', type=str, default='pixel',
+                        help='Random erase mode (default: "pixel")')
+    parser.add_argument('--recount', type=int, default=1,
+                        help='Random erase count (default: 1)')
+    parser.add_argument('--resplit', action='store_true', default=False,
+                        help='Do not random erase first (clean) augmentation split')
+
+    # * Mixup params
+    parser.add_argument('--mixup', type=float, default=0.8,
+                        help='mixup alpha, mixup enabled if > 0. (default: 0.8)')
+    parser.add_argument('--cutmix', type=float, default=1.0,
+                        help='cutmix alpha, cutmix enabled if > 0. (default: 1.0)')
+    parser.add_argument('--cutmix-minmax', type=float, nargs='+', default=None,
+                        help='cutmix min/max ratio, overrides alpha and enables cutmix if set (default: None)')
+    parser.add_argument('--mixup-prob', type=float, default=1.0,
+                        help='Probability of performing mixup or cutmix when either/both is enabled')
+    parser.add_argument('--mixup-switch-prob', type=float, default=0.5,
+                        help='Probability of switching to cutmix when both mixup and cutmix enabled')
+    parser.add_argument('--mixup-mode', type=str, default='batch',
+                        help='How to apply mixup/cutmix params. Per "batch", "pair", or "elem"')
+
+    # Distillation parameters
+    parser.add_argument('--teacher-model', default='regnety_160', type=str, metavar='MODEL',
+                        help='Name of teacher model to train (default: "regnety_160"')
+    parser.add_argument('--teacher-path', type=str, default='')
+    parser.add_argument('--distillation-type', default='none', choices=['none', 'soft', 'hard'], type=str, help="")
+    parser.add_argument('--distillation-alpha', default=0.5, type=float, help="")
+    parser.add_argument('--distillation-tau', default=1.0, type=float, help="")
+
+    # * Finetuning params
+    parser.add_argument('--finetune', default='', help='finetune from checkpoint')
+
+    # Dataset parameters
+    parser.add_argument(
+        "--data_subfolder_path", 
+        default=r"F:\data", 
+        help="Path to the data subfolder"
+    )
+    parser.add_argument(
+        "--data_folder_name", 
+        default=r"IN1k", 
+        help="Name of the data folder"
+    )
+    
+    parser.add_argument('--output_dir', default='',
+                        help='path where to save, empty for no saving')
+    parser.add_argument('--device', default='cuda',
+                        help='device to use for training / testing')
+    parser.add_argument('--seed', default=0, type=int)
+    parser.add_argument('--resume', default='', help='resume from checkpoint')
+    parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
+                        help='start epoch')
+    parser.add_argument('--eval', action='store_true', help='Perform evaluation only')
+    parser.add_argument('--dist-eval', action='store_true', default=False, help='Enabling distributed evaluation')
+    parser.add_argument('--num_workers', default=0, type=int)
+    parser.add_argument('--pin-mem', action='store_true',
+                        help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
+    parser.add_argument('--no-pin-mem', action='store_false', dest='pin_mem',
+                        help='')
+    parser.set_defaults(pin_mem=True)
+
+    # distributed training parameters
+    parser.add_argument('--world_size', default=1, type=int,
+                        help='number of distributed processes')
+    parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
+
+    # different norm setups
+    parser.add_argument('--post-norm', action='store_true', help='do postnorm instead of prenorm')
+    parser.add_argument('--layerscale', action='store_true', help='layer scale parameter initialization')
+    parser.add_argument('--ls-init', type=float, default=1e-5)
+
+    # localvit settings
+    parser.add_argument('--depth', type=int, default=12, help='depth of transformer')
+    parser.add_argument('--localvit', action='store_true', help='localvit network')
+    parser.add_argument('--localvit-act', type=str, default='hs+se', help='localvit block activation functions')
+    
+    #args for multi-size training
+    parser.add_argument('--is-multisize', action='store_true', help='do multisize training or not')
+    parser.add_argument('--init-size', type=int, default=32, help='initial input size to start with')
+    parser.add_argument('--epoch-step', type=int, default=7, help='how many epochs to stay with the same input size')
+    parser.add_argument('--patch-step', type=int, default=1, help='how many patches to increase the image size by')
+    parser.add_argument('--exp-epoch-step', action='store_true', help='if epoch steps change exponentially')
+    parser.add_argument('--decrease-batch-size', action='store_true', help='if batch size decreases over time')
+    parser.add_argument('--eval-on-final-size', action='store_true', help='do all the evaluations on final size')
+
+    return parser

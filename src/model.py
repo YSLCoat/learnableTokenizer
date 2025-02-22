@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from timm.models._manipulate import checkpoint_seq
-from differentiableWatershed.model import VoronoiPropagation
+from differentiableTokenizer.model import VoronoiPropagation
 
 import torch
 import torch.nn as nn
