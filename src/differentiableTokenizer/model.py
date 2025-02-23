@@ -413,11 +413,6 @@ class BoundaryPathFinder(nn.Module):
         new_segmentation_mask = self.adjust_boundaries(grad_map, segmentation_mask)
 
         return grad_map, segmentation_mask, new_segmentation_mask
-    
-    
-import math
-import torch
-import torch.nn as nn
 
 
 class SLICSegmentation(nn.Module):

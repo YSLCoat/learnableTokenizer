@@ -2,17 +2,15 @@ import timm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from math import sqrt
 
 from timm.models._manipulate import checkpoint_seq
-from differentiableWatershed.model import VoronoiPropagation
-
-import torch
-import torch.nn as nn
+from differentiableTokenizer.model import VoronoiPropagation, BoundaryPathFinder, SLICSegmentation
 from torch_scatter import scatter_mean, scatter_max
 
 class DifferentiableSuperpixelTokenizer(nn.Module):
     def __init__(self, max_segments, n_channels=3, sobel_init=True, embed_dim=768,
-                 use_positional_embeddings=True, reconstruction=False, device='cuda'):
+                 use_positional_embeddings=True, reconstruction=False, device='cuda', superpixel_algorithm=None):
         """
         Args:
             max_segments (int): Maximum number of superpixel segments.
@@ -24,7 +22,16 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
             device (str): Device to run the model.
         """
         super().__init__()
-        self.superpixel_tokenizer = VoronoiPropagation(max_segments, height=224, width=224, device=device)
+        # Select the superpixel algorithm based on the input string.
+        algorithm = 'voronoi_propagation' if superpixel_algorithm is None else superpixel_algorithm.lower()
+        if algorithm == 'voronoi_propagation':
+            self.superpixel_algorithm = VoronoiPropagation(max_segments, height=224, width=224, device=device)
+        elif algorithm == 'boundary_path_finder':
+            self.superpixel_algorithm = BoundaryPathFinder(sqrt(max_segments), sqrt(max_segments), height=224, width=224, device=device)
+        elif algorithm == 'slic_segmentation':
+            self.superpixel_algorithm = SLICSegmentation(max_segments, height=224, width=224, device=device)
+        else:
+            raise ValueError(f"Unknown superpixel algorithm: {superpixel_algorithm}")
         self.max_segments = max_segments
         self.embed_dim = embed_dim
         self.use_positional_embeddings = use_positional_embeddings
@@ -104,7 +111,7 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
         gradient_map = torch.sqrt(grad_x ** 2 + grad_y ** 2 + 1e-8)  # [B, H, W]
     
         # 3) Tokenize into superpixels.
-        centroid_coords, segments = self.superpixel_tokenizer(img, gradient_map)
+        centroid_coords, segments = self.superpixel_algorithm(img, gradient_map)
         # segments: [B, H, W]; centroid_coords: [B, n_centroids, 2]
 
         # 4) Compute similarity measure: S(∇x) = 1 - grad_map
@@ -179,7 +186,7 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
         
 
 class DifferentiableTokenizerVisionTransformer(nn.Module):
-    def __init__(self, model_name, max_segments, num_classes, num_channels, pretrained=False):
+    def __init__(self, model_name, max_segments, num_classes, num_channels, superpixel_algorithm='voronoi_propagation', pretrained=False):
         super().__init__()
         self.vit = timm.create_model(model_name, pretrained=pretrained, num_classes=num_classes, drop_rate=0.1, attn_drop_rate=0.1, drop_path_rate=0.1)
         self.embed_dim = self.vit.embed_dim
@@ -188,7 +195,8 @@ class DifferentiableTokenizerVisionTransformer(nn.Module):
         self.vit.patch_embed = DifferentiableSuperpixelTokenizer(
             max_segments=max_segments,
             n_channels=num_channels,
-            embed_dim=self.embed_dim
+            embed_dim=self.embed_dim,
+            superpixel_algorithm=superpixel_algorithm,
         )
 
         # Remove positional embeddings from the ViT

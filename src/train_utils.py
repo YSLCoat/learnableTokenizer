@@ -154,12 +154,73 @@ def prepare_dataloader(dataset: Dataset, batch_size: int):
         num_workers=4,
     )
     
+def prepare_dataloader_tokenizer_training(dataset: Dataset, batch_size: int, shuffle: bool, num_workers: int):
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        pin_memory=True,
+        shuffle=shuffle,
+        num_workers=num_workers,
+    )
+    
 def prepare_datasets(args):
     # Define the postprocessing transformations
     postprocess_train = (
         transforms.Compose([
             transforms.Resize((args.img_size, args.img_size)),
             RandAugment(num_ops=2, magnitude=9),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=(0.485, 0.456, 0.406),
+                std=(0.229, 0.224, 0.225)
+            ),
+        ]),
+        nn.Identity(),
+    )
+
+    # Define the postprocessing transformations for validation
+    postprocess_val = (
+        transforms.Compose([
+            transforms.Resize((args.img_size, args.img_size)),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=(0.485, 0.456, 0.406),
+                std=(0.229, 0.224, 0.225)
+            ),
+        ]),
+        nn.Identity(),
+    )
+    
+    # Create the training dataset
+    train_dataset = quixdata.QuixDataset(
+        args.data_folder_name,
+        args.data_subfolder_path,
+        override_extensions=[
+            'jpg',
+            'cls'
+        ],
+        train=True,
+    ).map_tuple(*postprocess_train)
+
+    # Create the validation dataset
+    val_dataset = quixdata.QuixDataset(
+        args.data_folder_name,
+        args.data_subfolder_path,
+        override_extensions=[
+            'jpg',
+            'cls'
+        ],
+        train=False,
+    ).map_tuple(*postprocess_val)
+    
+    return train_dataset, val_dataset
+
+
+def prepare_datasets_tokenizer_training(args):
+    # Define the postprocessing transformations
+    postprocess_train = (
+        transforms.Compose([
+            transforms.Resize((args.img_size, args.img_size)),
             transforms.ToTensor(),
             transforms.Normalize(
                 mean=(0.485, 0.456, 0.406),
