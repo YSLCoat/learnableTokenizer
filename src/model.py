@@ -179,9 +179,9 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
             
             reconstructed_img = reconstructed_img.permute(0, 3, 1, 2)
             
-            return final_embeddings, reconstructed_img, segments
+            return final_embeddings, reconstructed_img, segments, gradient_map
 
-        return final_embeddings
+        return final_embeddings, gradient_map, segments
 
         
 

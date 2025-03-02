@@ -133,10 +133,10 @@ class VoronoiPropagation(nn.Module):
                 shifted_mask = torch.roll(mask, shifts=(dy, dx), dims=(1, 2))
                 
                 # Calculate color distance between current pixel and centroid it is being propagated from
-                color_diff = torch.abs(color_map - torch.roll(color_map, shifts=(dy, dx), dims=(2, 3))).sum(dim=1)  # Sum over color channels
+                # color_diff = torch.abs(color_map - torch.roll(color_map, shifts=(dy, dx), dims=(2, 3))).sum(dim=1)  # Sum over color channels
 
                 # Add the gradient map value as a weighted penalty to the distance
-                weighted_dist = shifted_dist + weighted_grad_map[:, 0, :, :] + color_diff * color_weight
+                weighted_dist = shifted_dist + weighted_grad_map[:, 0, :, :] #+ color_diff * color_weight
                 
                 # Update the mask and distance map where the new combined distance is smaller
                 update_mask = weighted_dist < dist_map
@@ -228,7 +228,7 @@ class BoundaryPathFinder(nn.Module):
         boundary_masks_horizontal = torch.zeros((B, H, W), dtype=torch.bool, device=device)
 
         # Vertical boundaries
-        x_inits = torch.tensor([i * (W // self.num_segments_col) for i in range(1, self.num_segments_col)], device=device).clamp(0, W - 1)
+        x_inits = torch.tensor([i * (W // int(self.num_segments_col)) for i in range(1, int(self.num_segments_col))], device=device).clamp(0, W - 1)
         num_vertical_paths = x_inits.size(0)
         for b in range(B):
             grad_map_b = grad_map[b, 0]  # Shape: (H, W)
@@ -238,7 +238,7 @@ class BoundaryPathFinder(nn.Module):
                 boundary_masks_vertical[b, y_indices, vertical_paths[i]] = True
 
         # Horizontal boundaries
-        y_inits = torch.tensor([i * (H // self.num_segments_row) for i in range(1, self.num_segments_row)], device=device).clamp(0, H - 1)
+        y_inits = torch.tensor([i * (H // int(self.num_segments_row)) for i in range(1, int(self.num_segments_row))], device=device).clamp(0, H - 1)
         num_horizontal_paths = y_inits.size(0)
         for b in range(B):
             grad_map_b = grad_map[b, 0]  # Shape: (H, W)
@@ -398,21 +398,23 @@ class BoundaryPathFinder(nn.Module):
         return optimal_paths  # Shape: (num_paths, W)
 
     
-    def forward(self, x):
+    def forward(self, x, grad_map):
         B, C, H, W = x.shape
         if H != self.H or W != self.W:
             raise ValueError(f"Input image size must match initialized size: ({self.H}, {self.W})")
 
         # Compute gradient map
-        grad_map = self.compute_gradient_map(x)  # Shape: (B, 1, H, W)
+        # grad_map = self.compute_gradient_map(x)  # Shape: (B, 1, H, W)
+        
+        grad_map = grad_map.unsqueeze(1)
 
         # Initialize grid segmentation
         segmentation_mask = self.initialize_grid(B)  # Shape: (B, H, W)
 
         # Adjust boundaries
-        new_segmentation_mask = self.adjust_boundaries(grad_map, segmentation_mask)
+        new_segmentation_mask = self.adjust_boundaries(grad_map, segmentation_mask).type(torch.int64)
 
-        return grad_map, segmentation_mask, new_segmentation_mask
+        return 1, new_segmentation_mask
 
 
 class SLICSegmentation(nn.Module):
@@ -499,7 +501,7 @@ class SLICSegmentation(nn.Module):
         
         return torch.stack(updated_centroids, dim=0)
 
-    def SLIC(self, centroids, x, max_iter=2, m=10.0):
+    def SLIC(self, centroids, x, max_iter=50, m=10.0):
         """
         Perform a SLIC-like clustering to generate superpixels.
         
@@ -636,6 +638,6 @@ class SLICSegmentation(nn.Module):
         centroids = self.find_nearest_minima(centroids, grad_map)
         
         # 3) SLIC
-        mask = self.SLIC(centroids, x, max_iter=2, m=10.0)
+        mask = self.SLIC(centroids, x, max_iter=50, m=10.0)
         
         return centroids, mask

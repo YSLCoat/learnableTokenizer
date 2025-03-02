@@ -103,7 +103,7 @@ def parse_input_args(input_args):
     parser.add_argument(
         "--n_classes", 
         type=int, 
-        required=True, 
+        default=1000,
         help="Number of output classes"
     )
     parser.add_argument(
@@ -120,7 +120,7 @@ def parse_input_args(input_args):
     )
     parser.add_argument(
         "--n_segments",
-        default=50,
+        default=196,
         type=int,
         help="Number of segments for the tokenizer",
     )
