@@ -1,0 +1,29 @@
+Motivation
+Chapt 1 - Introduction & Superpixel Algorithms
+Introduction
+Preliminaries
+Quadtree example
+Background
+	Edge detection
+	Watershed
+	SLIC
+	Pathfinder
+Chapt 2 - Superpixels, Vision Transformers and Deep Learning
+Background
+	Deep learning for computer vision
+		CNN
+		Vision Transformers
+			Introduction to patch tokenization
+			Introduction to superpixel tokenization
+	Section: What already exists/what has been done
+		Deep learning for image segmentation
+		Differentiable SLIC
+		Learnable edge detection
+
+Chapter 3 - Methodology, how do we solve the problem of adding a learnable aspect to superpixel algorithms
+
+Chapter 4 - Results
+
+Chapter 5 - Discussion
+	
+	
