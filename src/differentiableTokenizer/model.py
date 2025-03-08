@@ -398,24 +398,74 @@ class BoundaryPathFinder(nn.Module):
         return optimal_paths  # Shape: (num_paths, W)
 
     
+    def compute_centroids(self, seg_mask):
+        """
+        seg_mask: (B, H, W) with label values in [0, K-1], K = num_segments_row * num_segments_col
+        Returns a list of length B, each entry is a (K, 2) tensor [y, x] for each superpixel's centroid.
+        """
+        B, H, W = seg_mask.shape
+        K = self.num_segments_row * self.num_segments_col
+
+        # We will store the centroids for each batch in a list of shape (B, K, 2).
+        centroids_list = []
+
+        for b in range(B):
+            mask_b = seg_mask[b]  # shape: (H, W)
+            # We'll create placeholders for sums of y, sums of x, and counts for each label
+            sums_y = torch.zeros(K, device=self.device, dtype=torch.float32)
+            sums_x = torch.zeros(K, device=self.device, dtype=torch.float32)
+            counts = torch.zeros(K, device=self.device, dtype=torch.float32)
+
+            # We can do this in a vectorized manner:
+            # 1) Flatten the mask
+            flat_mask = mask_b.view(-1)  # shape: (H*W,)
+            # 2) Prepare coordinates
+            y_coords = torch.arange(H, device=self.device).unsqueeze(1).expand(H, W).reshape(-1)
+            x_coords = torch.arange(W, device=self.device).unsqueeze(0).expand(H, W).reshape(-1)
+            
+            # 3) Add to sums
+            sums_y.index_add_(0, flat_mask, y_coords.float())
+            sums_x.index_add_(0, flat_mask, x_coords.float())
+            counts.index_add_(0, flat_mask, torch.ones_like(y_coords, dtype=torch.float32))
+
+            # Now compute centroids = sums / counts
+            # Some superpixels might have zero count if a boundary ended up not being used,
+            # but normally each label should appear at least once. 
+            # We can handle the possibility of zero counts by division with clamp_min.
+            counts = counts.clamp_min(1e-6)
+            centroids_y = sums_y / counts
+            centroids_x = sums_x / counts
+
+            # (K, 2) -> each row: [y, x]
+            centroids_b = torch.stack([centroids_y, centroids_x], dim=-1)
+            centroids_list.append(centroids_b)
+
+        # Convert list to a single tensor if desired: (B, K, 2)
+        centroids_all = torch.stack(centroids_list, dim=0)
+        return centroids_all
+
     def forward(self, x, grad_map):
         B, C, H, W = x.shape
         if H != self.H or W != self.W:
             raise ValueError(f"Input image size must match initialized size: ({self.H}, {self.W})")
 
-        # Compute gradient map
-        # grad_map = self.compute_gradient_map(x)  # Shape: (B, 1, H, W)
-        
+        # Optionally compute the gradient map if not provided
+        # grad_map = self.compute_gradient_map(x)  # shape: (B, 1, H, W)
+        # But here we assume grad_map is provided externally and has shape (B, H, W):
         grad_map = grad_map.unsqueeze(1)
 
-        # Initialize grid segmentation
-        segmentation_mask = self.initialize_grid(B)  # Shape: (B, H, W)
+        # 1) Initialize grid segmentation
+        segmentation_mask = self.initialize_grid(B)  # shape: (B, H, W)
+        
+        # 2) Adjust boundaries
+        new_segmentation_mask = self.adjust_boundaries(grad_map, segmentation_mask).long()
+        
+        # 3) Compute centroids for each superpixel
+        centroids = self.compute_centroids(new_segmentation_mask)
+        # centroids shape: (B, K, 2)
 
-        # Adjust boundaries
-        new_segmentation_mask = self.adjust_boundaries(grad_map, segmentation_mask).type(torch.int64)
-
-        return 1, new_segmentation_mask
-
+        # Return the number of segments if needed, or you can remove it
+        return centroids, new_segmentation_mask
 
 class SLICSegmentation(nn.Module):
     def __init__(self, num_clusters=196, height=224, width=224, device='cpu'):

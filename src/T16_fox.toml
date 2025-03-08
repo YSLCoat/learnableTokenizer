@@ -1,0 +1,27 @@
+img_size=224
+model='T16'
+savedir='/fp/projects01/ec232/torfor/learnableTokenizer/output'
+custom_runid='T16_fox'
+project='LearnableSuperpixelTokenizer_checkpoints'
+dataset='IN1k'
+epochs=100
+lr=3e-4
+lr_warmup_epochs=15
+weight_decay=2e-2
+randaug='none'
+aug3=false
+input_ext=['jpg']
+data_path='/fp/projects01/ec232/data/'
+batch_size=512
+zro=false
+resume='checkpoints/learnablesuperpixeltokenizer_mae_init_T16.pth'
+onlyweights=true
+model_ema=false
+stdout=true
+loss_fn='logcosh'
+workers=16
+prefetch=4
+accumulation_steps=2
+
+# Comments
+# ImageNet1K, normalized

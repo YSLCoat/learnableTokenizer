@@ -185,7 +185,7 @@ class DifferentiableSuperpixelTokenizer(nn.Module):
 
         
 
-class DifferentiableTokenizerVisionTransformer(nn.Module):
+class DifferentiableSuperpixelTokenizerViT(nn.Module):
     def __init__(self, model_name, max_segments, num_classes, num_channels, superpixel_algorithm='voronoi_propagation', pretrained=False):
         super().__init__()
         self.vit = timm.create_model(model_name, pretrained=pretrained, num_classes=num_classes, drop_rate=0.1, attn_drop_rate=0.1, drop_path_rate=0.1)
