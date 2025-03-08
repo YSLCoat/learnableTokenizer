@@ -1,12 +1,12 @@
 #!/usr/bin/bash
 
 ## SLURM SETUP
-#SBATCH --account=nn8104k
-#SBATCH --job-name=gambit
+#SBATCH --account=ec232
+#SBATCH --job-name=LearnableTokenizerViT
 #SBATCH --time=4-00:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
-#SBATCH --partition=a100
+#SBATCH --partition=ifi_accel
 #SBATCH --gpus-per-node=4
 #SBATCH --cpus-per-task=8
 #SBATCH --mem-per-cpu=16G
