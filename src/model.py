@@ -207,7 +207,7 @@ class DifferentiableSuperpixelTokenizerViT(nn.Module):
         self.cls_positional_embedding = nn.Parameter(torch.randn(1, 1, self.embed_dim) * 0.02)
 
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:
-        embeddings = self.vit.patch_embed(x)  # [B, max_segments, embed_dim]
+        embeddings, gradient_map, segments = self.vit.patch_embed(x)  # [B, max_segments, embed_dim]
         b, n, d = embeddings.shape
 
         cls_tokens = self.vit.cls_token.expand(b, -1, -1)  # [B, 1, D]
@@ -224,12 +224,12 @@ class DifferentiableSuperpixelTokenizerViT(nn.Module):
             x = self.vit.blocks(x)
 
         x = self.vit.norm(x)
-        return x
+        return x, gradient_map, segments
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.forward_features(x)
+        x, gradient_map, segments = self.forward_features(x)
         x = self.vit.forward_head(x, pre_logits=False)
-        return x
+        return x, gradient_map, segments
     
     
 def test_tokenizer():
@@ -264,7 +264,7 @@ def test_vit():
     num_channels = 3
 
     # Instantiate the Vision Transformer with our differentiable tokenizer as patch_embed
-    model = DifferentiableTokenizerVisionTransformer(
+    model = DifferentiableSuperpixelTokenizerViT(
         model_name=model_name,
         max_segments=max_segments,
         num_classes=num_classes,
@@ -277,7 +277,7 @@ def test_vit():
     dummy_img = torch.randn(B, num_channels, H, W)
 
     # Forward pass through the ViT model
-    output = model(dummy_img)
+    output, gradient_map, segments = model(dummy_img)
     print("ViT output shape:", output.shape)
 
 if __name__ == "__main__":

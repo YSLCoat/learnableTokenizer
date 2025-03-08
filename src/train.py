@@ -2,14 +2,13 @@ import torch
 import sys
 
 from torch.optim import AdamW
-from model import DifferentiableTokenizerVisionTransformer
+from model import DifferentiableSuperpixelTokenizerViT
 from torchinfo import summary
 import torch.multiprocessing as mp
-from scheduler import CosineDecay
 from timm.data import Mixup
 from timm.scheduler import create_scheduler
 
-from train_utils import *
+from train_utils_vit import *
 from utils import get_available_gpus
 from input_parser import parse_input_args
 from torch.distributed import destroy_process_group
@@ -19,7 +18,7 @@ def main(rank, world_size, args):
     args = parse_input_args(args)
     ddp_setup(rank, world_size)
     
-    model = DifferentiableTokenizerVisionTransformer(
+    model = DifferentiableSuperpixelTokenizerViT(
         args.model_name, args.n_segments, args.n_classes, args.n_channels
     )
     
@@ -39,26 +38,41 @@ def main(rank, world_size, args):
     val_dataloader = prepare_dataloader(val_dataset, args.batch_size)
     
     
+    # Check if mixup or cutmix is active
+    mixup_active = args.mixup > 0 or args.cutmix > 0 or (hasattr(args, "cutmix_minmax") and args.cutmix_minmax is not None)
     mixup_fn = None
-    mixup_active = False # args.mixup > 0 or args.cutmix > 0. or args.cutmix_minmax is not None
     if mixup_active:
         mixup_fn = Mixup(
-            mixup_alpha=args.mixup, cutmix_alpha=args.cutmix, cutmix_minmax=args.cutmix_minmax,
-            prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
-            label_smoothing=args.smoothing, num_classes=args.nb_classes)
+            mixup_alpha=args.mixup, 
+            cutmix_alpha=args.cutmix, 
+            cutmix_minmax=args.cutmix_minmax,
+            prob=args.mixup_prob, 
+            switch_prob=args.mixup_switch_prob, 
+            mode=args.mixup_mode,
+            label_smoothing=args.smoothing, 
+            num_classes=args.nb_classes
+        )
+
+    # Choose loss function based on whether mixup/cutmix is active
+    if mixup_active:
+        # When using mixup, targets should be soft labels. Ensure your training pipeline
+        # converts integer labels to one-hot distributions if necessary.
+        loss_function = SoftTargetCrossEntropy()
+    else:
+        label_smoothing = getattr(args, "label_smoothing", 0.0)
+        loss_function = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
         
-    
-    # lr_scheduler, _ = create_scheduler(args, optimizer)
-    
-    
+        
     trainer = Trainer(
-        args,
-        model,
-        train_dataloader,
-        val_dataloader,
-        optimizer,
-        rank,
-        args.save_every
+        args=args,
+        model=model,
+        train_data=train_dataloader,
+        val_data=val_dataloader,
+        optimizer=optimizer,
+        loss_function=loss_function,
+        gpu_id=rank,
+        save_every=args.save_every,
+        mixup_function=mixup_fn
     )
     
     trainer.train(args.epochs)

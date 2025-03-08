@@ -469,3 +469,82 @@ def visualize_segmentation_and_reconstruction(image, gradient_map, segments, pre
     plt.close(fig)
     
     print(f"Saved visualization to {save_path}")
+
+
+
+def visualize_segmentation(image, gradient_map, segments, output_folder, filename, figsize=(15, 15), apply_thinning=True):
+    """
+    Visualizes segmentation boundaries and reconstruction results in a 2x2 grid:
+    
+        Top Left: Input image with segmentation boundaries overlaid.
+        Top Right: Raw gradient map.
+        Bottom Left: Reconstructed image (preds) without overlay.
+        Bottom Right: Original input image (without overlay).
+    
+    Args:
+        image (Tensor or np.ndarray): Original input image (unnormalized) of shape [C, H, W] or [H, W, C].
+        gradient_map (Tensor or np.ndarray): Gradient map, shape [H, W] or [1, H, W].
+        segments (Tensor or np.ndarray): Segmentation labels, shape [H, W] or [1, H, W].
+        preds (Tensor or np.ndarray): Reconstructed image from the model, shape similar to image.
+        output_folder (str): Folder to save the output figure.
+        filename (str): Filename for the saved figure.
+        figsize (tuple): Size of the matplotlib figure.
+        apply_thinning (bool): Whether to apply thinning to the boundary mask.
+    """
+    # Convert to numpy arrays if they are torch.Tensors
+    def to_numpy(x):
+        return x.detach().cpu().numpy() if hasattr(x, "cpu") else np.copy(x)
+    
+    image_np = to_numpy(image)
+    grad_np = to_numpy(gradient_map)
+    seg_np = to_numpy(segments)
+    
+    # If image is [C, H, W] with 1 or 3 channels, transpose to [H, W, C]
+    if image_np.ndim == 3 and image_np.shape[0] in [1, 3]:
+        image_np = np.transpose(image_np, (1, 2, 0))
+    
+    # Squeeze gradient map if needed
+    if grad_np.ndim == 3 and grad_np.shape[0] == 1:
+        grad_np = grad_np.squeeze(0)
+    
+    # Squeeze segmentation mask if needed
+    if seg_np.ndim == 3 and seg_np.shape[0] == 1:
+        seg_np = seg_np.squeeze(0)
+    
+    # Compute boundaries from the segmentation mask by comparing neighboring pixels.
+    boundaries = np.zeros_like(seg_np, dtype=bool)
+    boundaries[1:, :] |= (seg_np[1:, :] != seg_np[:-1, :])
+    boundaries[:, 1:] |= (seg_np[:, 1:] != seg_np[:, :-1])
+    
+    # Optionally apply thinning to ensure boundaries are only 1 pixel wide.
+    if apply_thinning:
+        boundaries = thin(boundaries)
+    
+    # Create a 2x2 figure.
+    fig, axs = plt.subplots(2, 2, figsize=figsize)
+    
+    # Top Left: Input image with segmentation boundaries.
+    axs[0, 0].imshow(image_np.astype(np.uint8) if image_np.max() > 1 else image_np)
+    axs[0, 0].contour(boundaries, colors='red', linewidths=0.7)
+    axs[0, 0].set_title("Input Image with Boundaries")
+    axs[0, 0].axis("off")
+    
+    # Top Right: Raw gradient map.
+    axs[0, 1].imshow(grad_np, cmap='gray')
+    axs[0, 1].set_title("Gradient Map")
+    axs[0, 1].axis("off")
+    
+    # Bottom Right: Original input image without any overlay.
+    axs[1, 1].imshow(image_np.astype(np.uint8) if image_np.max() > 1 else image_np)
+    axs[1, 1].set_title("Original Image")
+    axs[1, 1].axis("off")
+    
+    plt.tight_layout()
+    
+    # Create the output folder if it doesn't exist.
+    os.makedirs(output_folder, exist_ok=True)
+    save_path = os.path.join(output_folder, filename)
+    plt.savefig(save_path, bbox_inches='tight')
+    plt.close(fig)
+    
+    print(f"Saved visualization to {save_path}")

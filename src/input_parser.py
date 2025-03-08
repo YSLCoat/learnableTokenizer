@@ -33,7 +33,7 @@ def parse_input_args(input_args):
         "--lr_start",
         default=1e-6, 
         type=float, 
-        help="Learning rate at end of scheduling"
+        help="Learning rate at start of scheduling"
     )
     parser.add_argument(
         "--lr_stop",
@@ -45,7 +45,7 @@ def parse_input_args(input_args):
         "--lr",
         default=1e-3, 
         type=float, 
-        help="Learning rate at end of scheduling"
+        help="Learning rate"
     )
     parser.add_argument(
         "--lr_scheduler_warmup",
@@ -85,20 +85,21 @@ def parse_input_args(input_args):
     )
     parser.add_argument(
         "--save_every", 
-        default=1, 
+        default=20, 
         type=int, 
         help="Save model checkpoint every n epochs"
     )
     parser.add_argument(
         "--model_name",
         choices=[
-        "vit_tiny_patch16_224",
-        "vit_small_patch16_224",
-        "vit_base_patch16_224",
-        "vit_large_patch16_224"],
-        default="vit_base_patch16_224",
+            "vit_tiny_patch16_224",
+            "vit_small_patch16_224",
+            "vit_base_patch16_224",
+            "vit_large_patch16_224"
+        ],
+        default="vit_tiny_patch16_224",
         type=str,
-        help="Insert vit_small, vit_base, vit_large or vit_huge for presets. Enter a custom name if using custom parameters.",
+        help="Insert model name.",
     )
     parser.add_argument(
         "--n_classes", 
@@ -137,6 +138,56 @@ def parse_input_args(input_args):
         '--reproducibility_statement_file',
         default=None,
         help='Path to the reproducibility statement file (JSON or YAML). If provided, parameters are extracted from this file instead of the default values.'
+    )
+    # New arguments for mixup and cutmix augmentations
+    parser.add_argument(
+        "--mixup",
+        default=0.8,
+        type=float,
+        help="Mixup alpha value. Set to 0 to disable mixup."
+    )
+    parser.add_argument(
+        "--cutmix",
+        default=1.0,
+        type=float,
+        help="Cutmix alpha value. Set to 0 to disable cutmix."
+    )
+    parser.add_argument(
+        "--cutmix_minmax",
+        default=None,
+        type=float,
+        help="Cutmix minmax value. If provided, activates cutmix with minmax clipping."
+    )
+    # Additional parameters used in mixup augmentation (if needed)
+    parser.add_argument(
+        "--mixup_prob",
+        default=1.0,
+        type=float,
+        help="Probability of applying mixup."
+    )
+    parser.add_argument(
+        "--mixup_switch_prob",
+        default=0.5,
+        type=float,
+        help="Probability of switching mixup to cutmix."
+    )
+    parser.add_argument(
+        "--mixup_mode",
+        default="batch",
+        type=str,
+        help="Mode for mixup ('batch' or other supported modes)."
+    )
+    parser.add_argument(
+        "--smoothing",
+        default=0.1,
+        type=float,
+        help="Label smoothing value for soft targets."
+    )
+    parser.add_argument(
+        "--nb_classes",
+        default=1000,
+        type=int,
+        help="Number of classes for mixup augmentation."
     )
 
     # If reproducibility_statement_file is provided, load the args from the file
