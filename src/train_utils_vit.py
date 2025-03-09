@@ -93,7 +93,7 @@ class Trainer:
             with torch.no_grad():
                 preds, gradient_map, segments = self.model(source)
                 # Use hard labels during evaluation
-                loss = self.loss_function(preds, targets)
+                loss = self.loss_function(preds, targets_for_loss)
                 return loss.item(), preds, segments, gradient_map
 
     def _run_epoch(self, epoch):
@@ -128,7 +128,8 @@ class Trainer:
             num_train_batches += 1
 
             if self.verbose_training:
-                print(f"Epoch: {epoch+1} | Batch: {batch_idx+1} | Loss: {loss:.4f} | EV: {batch_ev:.4f}")
+                if batch_idx % 100 == 0: 
+                    print(f"Epoch: {epoch+1} | Batch: {batch_idx+1} | Loss: {loss:.4f} | EV: {batch_ev:.4f}")
 
             if batch_idx % 1000 == 0:  # Adjust the frequency as needed
                 # Choose a sample from the batch (for example, the first sample)
