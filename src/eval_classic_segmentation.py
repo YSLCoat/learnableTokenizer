@@ -12,6 +12,7 @@ import quixdata
 import torchvision.transforms.v2 as transforms
 import torch.nn as nn
 from tqdm import tqdm  # <-- Added tqdm import
+from skimage.filters import sobel
 
 def prepare_dataloader(dataset: Dataset, batch_size: int):
     return DataLoader(
@@ -108,7 +109,7 @@ def run_segmentation_and_eval(train_loader,
 
         elif method.lower() == 'watershed':
             # Convert to grayscale for watershed
-            image_gray = rgb2gray(image_np)
+            image_gray = sobel(rgb2gray(image_np))
 
             # Example marker creation: 2 regions (background & foreground)
             markers = np.zeros_like(image_gray, dtype=np.int32)
@@ -116,7 +117,7 @@ def run_segmentation_and_eval(train_loader,
             markers[image_gray > (1.0 - watershed_threshold)] = 2
 
             # Run watershed
-            labels = watershed(image_gray, markers=markers)
+            labels = watershed(image_gray, markers=slic_n_segments)
             return labels
 
         else:

@@ -93,7 +93,7 @@ class Trainer:
             with torch.no_grad():
                 preds, gradient_map, segments = self.model(source)
                 # Use hard labels during evaluation
-                loss = self.loss_function(preds, targets_for_loss)
+                loss = F.cross_entropy(preds, targets)
                 return loss.item(), preds, segments, gradient_map
 
     def _run_epoch(self, epoch):

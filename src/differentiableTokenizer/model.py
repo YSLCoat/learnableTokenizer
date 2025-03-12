@@ -175,29 +175,9 @@ class BoundaryPathFinder(nn.Module):
         
         self.convert_to_grayscale = torchvision.transforms.Grayscale(num_output_channels=1)
         
-        # Sobel kernels
-        self.sobel_x = torch.tensor([[[[-1, 0, 1], 
-                                  [-2, 0, 2], 
-                                  [-1, 0, 1]]]], device=device, dtype=torch.float32)
-        self.sobel_y = torch.tensor([[[[-1, -2, -1], 
-                                  [0, 0, 0], 
-                                  [1, 2, 1]]]], device=device, dtype=torch.float32)
         
         # Move offsets for dynamic programming
         self.move_offsets = torch.tensor([-1, 0, 1], device=device)
-    
-    def compute_gradient_map(self, x):
-        # x: (B, C, H, W)
-        if x.shape[1] == 3:
-            x = self.convert_to_grayscale(x)
-        
-        # Apply Sobel filters
-        grad_x = F.conv2d(x, self.sobel_x, padding=1)
-        grad_y = F.conv2d(x, self.sobel_y, padding=1)
-
-        # Compute gradient magnitude
-        grad_map = torch.sqrt(grad_x ** 2 + grad_y ** 2 + 1e-8)
-        return grad_map  # Shape: (B, 1, H, W)
     
     def initialize_grid(self, batch_size):
         # Create grid labels
