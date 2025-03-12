@@ -115,7 +115,7 @@ class Trainer:
             if self.verbose_training:
                 print(f"Epoch: {epoch+1} | Batch: {batch_idx+1} | Loss: {loss:.4f} | EV: {batch_ev:.4f}")
                 
-            if batch_idx % 1 == 0:  # Adjust the frequency as needed
+            if batch_idx == 1 or batch_idx % 10 == 0:  # Adjust the frequency as needed
                 # Choose a sample from the batch (for example, the first sample)
                 sample_image = unnormalized_batch[0]          # shape: [C, H, W]
                 sample_gradient = gradient_map[0]   # shape: [H, W] (or [1, H, W])
@@ -164,7 +164,7 @@ class Trainer:
         
     def _save_checkpoint(self, epoch):
         ckp = self.model.module.state_dict()
-        PATH = "scatter_mean_max_checkpoint.pt"
+        PATH = "learnableGradMapTokenizer_16.pt"
         torch.save(ckp, PATH)
         print(f"Epoch {epoch} | Training checkpoint saved at {PATH}")
 

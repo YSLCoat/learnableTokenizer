@@ -22,7 +22,7 @@ def main(rank, world_size, args):
         embed_dim=192,
         use_positional_embeddings=False,
         reconstruction=True,
-        superpixel_algorithm='boundary_path_finder',
+        superpixel_algorithm='voronoi_propagation',
     )
     
     # if rank==0:
