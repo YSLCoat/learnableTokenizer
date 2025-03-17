@@ -126,6 +126,11 @@ def parse_input_args(input_args):
         help="Number of segments for the tokenizer",
     )
     parser.add_argument(
+        "--model_save_path",
+        help="Path to save model",
+        default="trained_model.pt",
+    )
+    parser.add_argument(
         "--pretrained_model_path",
         help="Path to the pretrained model"
     )
