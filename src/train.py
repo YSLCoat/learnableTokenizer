@@ -19,7 +19,7 @@ def main(rank, world_size, args):
     ddp_setup(rank, world_size)
     
     model = DifferentiableSuperpixelTokenizerViT(
-        args.model_name, args.n_segments, args.n_classes, args.n_channels
+        args.model_name, args.n_segments, args.n_classes, args.n_channels, args.superpixel_algorithm
     )
     
     if rank==0:

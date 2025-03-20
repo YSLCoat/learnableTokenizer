@@ -102,6 +102,17 @@ def parse_input_args(input_args):
         help="Insert model name.",
     )
     parser.add_argument(
+        "--superpixel_algorithm",
+        choices=[
+            "voronoi_propagation",
+            "slic_segmentation",
+            "boundary_path_finder",
+        ],
+        default="voronoi_propagation",
+        type=str,
+        help="Insert suerpixel algorithm name.",
+    )
+    parser.add_argument(
         "--n_classes", 
         type=int, 
         default=1000,
