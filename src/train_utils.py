@@ -123,7 +123,7 @@ class Trainer:
                 sample_reconstructed = unnormalized_reconstruct[0]
                 
                 # Define the output folder and filename.
-                output_folder = "visualizations_" + str(self.args.superpixel_algorithm)
+                output_folder = "visualizations_" + str(self.args.superpixel_algorithm) + "_" + str(self.args.n_segments) 
                 filename = f"epoch_{epoch+1}_batch_{batch_idx+1}.png"
                 visualize_segmentation_and_reconstruction(sample_image, sample_gradient, sample_segments, sample_reconstructed, output_folder, filename)
 
@@ -164,7 +164,7 @@ class Trainer:
         
     def _save_checkpoint(self, epoch):
         ckp = self.model.module.state_dict()
-        PATH = "learnableGradMapTokenizer_" + str(self.args.superpixel_algorithm) + "_.pt"
+        PATH = "learnableGradMapTokenizer_" + str(self.args.superpixel_algorithm) + "_" + str(self.args.n_segments) + "_.pt"
         torch.save(ckp, PATH)
         print(f"Epoch {epoch} | Training checkpoint saved at {PATH}")
 
