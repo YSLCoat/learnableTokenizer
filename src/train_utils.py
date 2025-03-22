@@ -123,7 +123,7 @@ class Trainer:
                 sample_reconstructed = unnormalized_reconstruct[0]
                 
                 # Define the output folder and filename.
-                output_folder = "visualizations_pytorch_slic"
+                output_folder = "visualizations_" + str(self.args.superpixel_algorithm)
                 filename = f"epoch_{epoch+1}_batch_{batch_idx+1}.png"
                 visualize_segmentation_and_reconstruction(sample_image, sample_gradient, sample_segments, sample_reconstructed, output_folder, filename)
 
@@ -136,7 +136,7 @@ class Trainer:
         for batch_idx, (source, targets) in enumerate(tqdm(self.val_data)):
             source = source.to(self.gpu_id)
             targets = targets.to(self.gpu_id)
-            loss, preds, segments = self._run_batch(source, targets, train=False)
+            loss, preds, segments, gradient_map = self._run_batch(source, targets, train=False)
             val_loss += loss
 
             mean = torch.tensor([0.485, 0.456, 0.406], device=source.device).view(1, -1, 1, 1)  # (1, C, 1, 1)
@@ -164,7 +164,7 @@ class Trainer:
         
     def _save_checkpoint(self, epoch):
         ckp = self.model.module.state_dict()
-        PATH = "learnableGradMapTokenizer_16.pt"
+        PATH = "learnableGradMapTokenizer_" + str(self.args.superpixel_algorithm) + "_.pt"
         torch.save(ckp, PATH)
         print(f"Epoch {epoch} | Training checkpoint saved at {PATH}")
 
