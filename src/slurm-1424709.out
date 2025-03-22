@@ -1,0 +1,24 @@
+
+Job 1424709 consumed 747.4 billing hours from project ec232.
+
+Submitted 2025-03-20T21:52:14; waited 0.0 seconds in the queue after becoming eligible to run.
+
+Requested wallclock time: 2.0 days
+Elapsed wallclock time:   11.7 hours
+
+Job failed.
+
+Task and CPU statistics:
+ID             CPUs  Tasks  CPU util                Start  Elapsed  Exit status
+1424709           4            0.0 %  2025-03-20T21:52:14   11.7 h  1
+1424709.batch     4      1   119.8 %  2025-03-20T21:52:14   11.7 h  1
+
+Used CPU time:   2.3 CPU days
+Unused CPU time: 0.0 CPU seconds
+
+Memory statistics, in GiB:
+ID              Alloc   Usage
+1424709         100.0        
+1424709.batch   100.0    24.2
+
+Job 1424709 completed at Fri Mar 21 09:32:55 CET 2025
