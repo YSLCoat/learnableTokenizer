@@ -123,7 +123,7 @@ class Trainer:
                 sample_reconstructed = unnormalized_reconstruct[0]
                 
                 # Define the output folder and filename.
-                output_folder = "visualizations"
+                output_folder = "visualizations_pytorch_slic"
                 filename = f"epoch_{epoch+1}_batch_{batch_idx+1}.png"
                 visualize_segmentation_and_reconstruction(sample_image, sample_gradient, sample_segments, sample_reconstructed, output_folder, filename)
 

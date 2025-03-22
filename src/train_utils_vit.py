@@ -328,4 +328,16 @@ def prepare_datasets_tokenizer_training(args):
     ).map_tuple(*postprocess_val)
     
     return train_dataset, val_dataset
+
+
+def freeze_vit_params(model, freeze_attn=True, freeze_ffn=True):
+    for name, param in model.vit.named_parameters():
+        if 'patch_embed' in name:
+            continue
+        if 'head' in name:
+            continue
+        if freeze_attn and 'attn' in name:
+            param.requires_grad = False
+        if freeze_ffn and 'mlp' in name:
+            param.requires_grad = False
     
