@@ -384,7 +384,7 @@ class BoundaryPathFinder(nn.Module):
         Returns a list of length B, each entry is a (K, 2) tensor [y, x] for each superpixel's centroid.
         """
         B, H, W = seg_mask.shape
-        K = self.num_segments_row * self.num_segments_col
+        K = int(self.num_segments_row * self.num_segments_col)
 
         # We will store the centroids for each batch in a list of shape (B, K, 2).
         centroids_list = []
@@ -668,6 +668,6 @@ class SLICSegmentation(nn.Module):
         centroids = self.find_nearest_minima(centroids, grad_map)
         
         # 3) SLIC
-        mask = self.SLIC(centroids, x, max_iter=50, m=10.0)
+        mask = self.SLIC(centroids, x, max_iter=50, m=20.0)
         
         return centroids, mask
