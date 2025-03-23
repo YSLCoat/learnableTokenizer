@@ -582,11 +582,12 @@ class SLICSegmentation(nn.Module):
                     cy = yc[b_idx, c_idx].item()
                     cx = xc[b_idx, c_idx].item()
                     
-                    # Neighborhood bounds
-                    y_min = max(0, cy - S)
-                    y_max = min(H, cy + S)
-                    x_min = max(0, cx - S)
-                    x_max = min(W, cx + S)
+                    window_radius = int(1.5 * S)
+
+                    y_min = max(0, cy - window_radius)
+                    y_max = min(H, cy + window_radius)
+                    x_min = max(0, cx - window_radius)
+                    x_max = min(W, cx + window_radius)
                     
                     # Extract color patch
                     color_patch = x[b_idx, :, y_min:y_max, x_min:x_max]
