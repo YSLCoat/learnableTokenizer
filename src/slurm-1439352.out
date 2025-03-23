@@ -1,0 +1,91 @@
+Starting job 1439352 on gpu-4 on fox at Sat Mar 22 23:17:49 CET 2025
+
+Number of available GPUs: 4
+GPU 0: NVIDIA GeForce RTX 3090
+GPU 1: NVIDIA GeForce RTX 3090
+GPU 2: NVIDIA GeForce RTX 3090
+GPU 3: NVIDIA GeForce RTX 3090
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+terminate called without an active exception
+terminate called without an active exception
+terminate called without an active exception
+  0%|          | 0/5005 [00:00<?, ?it/s]  0%|          | 0/5005 [00:00<?, ?it/s]  0%|          | 0/5005 [00:00<?, ?it/s]  0%|          | 0/5005 [00:00<?, ?it/s]  0%|          | 1/5005 [04:22<365:18:58, 262.82s/it]  0%|          | 1/5005 [04:17<358:17:19, 257.76s/it]  0%|          | 1/5005 [04:18<359:32:06, 258.66s/it]  0%|          | 1/5005 [04:18<359:18:23, 258.49s/it]../aten/src/ATen/native/cuda/ScatterGatherKernel.cu:144: operator(): block: [4507,0,0], thread: [124,0,0] Assertion `idx_dim >= 0 && idx_dim < index_size && "index out of bounds"` failed.
+../aten/src/ATen/native/cuda/ScatterGatherKernel.cu:144: operator(): block: [4507,0,0], thread: [125,0,0] Assertion `idx_dim >= 0 && idx_dim < index_size && "index out of bounds"` failed.
+../aten/src/ATen/native/cuda/ScatterGatherKernel.cu:144: operator(): block: [4507,0,0], thread: [126,0,0] Assertion `idx_dim >= 0 && idx_dim < index_size && "index out of bounds"` failed.
+../aten/src/ATen/native/cuda/ScatterGatherKernel.cu:144: operator(): block: [4507,0,0], thread: [127,0,0] Assertion `idx_dim >= 0 && idx_dim < index_size && "index out of bounds"` failed.
+  0%|          | 1/5005 [08:09<681:05:05, 489.99s/it]
+../aten/src/ATen/native/cuda/ScatterGatherKernel.cu:144: operator(): block: [6173,0,0], thread: [126,0,0] Assertion `idx_dim >= 0 && idx_dim < index_size && "index out of bounds"` failed.
+../aten/src/ATen/native/cuda/ScatterGatherKernel.cu:144: operator(): block: [6173,0,0], thread: [127,0,0] Assertion `idx_dim >= 0 && idx_dim < index_size && "index out of bounds"` failed.
+Epoch: 1 | Batch: 1 | Loss: 1.6519 | EV: 0.7785
+Saved visualization to visualizations_slic_segmentation_98/epoch_1_batch_1.png
+  0%|          | 1/5005 [08:06<676:09:05, 486.44s/it]
+Epoch: 1 | Batch: 1 | Loss: 1.4683 | EV: 0.7421
+Saved visualization to visualizations_slic_segmentation_98/epoch_1_batch_1.png
+Traceback (most recent call last):
+  File "/cluster/software/EL9/easybuild/software/Python/3.10.8-GCCcore-12.2.0/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/cluster/software/EL9/easybuild/software/Python/3.10.8-GCCcore-12.2.0/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/differentiableTokenizer/train.py", line 62, in <module>
+    mp.spawn(main, args=(world_size, sys.argv[1:]), nprocs=world_size)
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 239, in spawn
+    return start_processes(fn, args, nprocs, join, daemon, start_method='spawn')
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 197, in start_processes
+    while not context.join():
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 160, in join
+    raise ProcessRaisedException(msg, error_index, failed_process.pid)
+torch.multiprocessing.spawn.ProcessRaisedException: 
+
+-- Process 3 terminated with the following error:
+Traceback (most recent call last):
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 69, in _wrap
+    fn(i, *args)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/differentiableTokenizer/train.py", line 56, in main
+    trainer.train(args.epochs)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/train_utils.py", line 174, in train
+    self._run_epoch(epoch)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/train_utils.py", line 101, in _run_epoch
+    loss, preds, segments, gradient_map = self._run_batch(source, targets, train=True)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/train_utils.py", line 77, in _run_batch
+    loss.backward()
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/_tensor.py", line 487, in backward
+    torch.autograd.backward(
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/autograd/__init__.py", line 200, in backward
+    Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+RuntimeError: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1.
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+
+
+Job 1439352 consumed 10.2 billing hours from project ec232.
+
+Submitted 2025-03-22T20:41:56; waited 2.6 hours in the queue after becoming eligible to run.
+
+Requested wallclock time: 2.0 days
+Elapsed wallclock time:   9.6 minutes
+
+Job failed.
+
+Task and CPU statistics:
+ID             CPUs  Tasks  CPU util                Start  Elapsed  Exit status
+1439352           4            0.0 %  2025-03-22T23:17:49  575.0 s  1
+1439352.batch     4      1   103.2 %  2025-03-22T23:17:49  575.0 s  1
+
+Used CPU time:   39.6 CPU minutes
+Unused CPU time: 0.0 CPU seconds
+
+Memory statistics, in GiB:
+ID              Alloc   Usage
+1439352         100.0        
+1439352.batch   100.0    22.5
+
+Job 1439352 completed at Sat Mar 22 23:27:24 CET 2025

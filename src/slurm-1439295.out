@@ -1,0 +1,110 @@
+Starting job 1439295 on gpu-4 on fox at Sat Mar 22 16:59:25 CET 2025
+
+Number of available GPUs: 4
+GPU 0: NVIDIA GeForce RTX 3090
+GPU 1: NVIDIA GeForce RTX 3090
+GPU 2: NVIDIA GeForce RTX 3090
+GPU 3: NVIDIA GeForce RTX 3090
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+  0%|          | 0/5005 [00:00<?, ?it/s]terminate called without an active exception
+terminate called without an active exception
+  0%|          | 0/5005 [00:00<?, ?it/s]  0%|          | 0/5005 [00:00<?, ?it/s]  0%|          | 0/5005 [00:00<?, ?it/s]  0%|          | 1/5005 [08:07<678:10:46, 487.90s/it]  0%|          | 1/5005 [08:07<677:55:40, 487.72s/it]  0%|          | 1/5005 [08:11<682:32:14, 491.03s/it]  0%|          | 1/5005 [08:00<668:18:04, 480.79s/it]  0%|          | 2/5005 [15:53<659:40:20, 474.68s/it]  0%|          | 2/5005 [15:55<660:29:21, 475.27s/it]  0%|          | 2/5005 [15:44<654:35:46, 471.03s/it]  0%|          | 2/5005 [15:53<659:36:45, 474.64s/it]  0%|          | 3/5005 [23:28<646:58:53, 465.64s/it]  0%|          | 3/5005 [23:30<647:25:32, 465.96s/it]  0%|          | 3/5005 [23:29<648:07:07, 466.46s/it]  0%|          | 3/5005 [23:21<645:26:09, 464.53s/it]  0%|          | 4/5005 [31:11<645:32:52, 464.70s/it]  0%|          | 4/5005 [31:13<645:49:04, 464.90s/it]  0%|          | 4/5005 [31:05<644:45:45, 464.14s/it]  0%|          | 4/5005 [31:13<646:24:38, 465.32s/it]  0%|          | 5/5005 [38:47<640:46:16, 461.36s/it]  0%|          | 5/5005 [38:39<639:45:30, 460.63s/it]  0%|          | 5/5005 [38:50<642:35:54, 462.67s/it]  0%|          | 5/5005 [38:52<642:47:10, 462.81s/it]  0%|          | 6/5005 [46:29<640:36:00, 461.32s/it]  0%|          | 6/5005 [46:21<639:56:33, 460.85s/it]  0%|          | 6/5005 [46:29<640:39:37, 461.37s/it]  0%|          | 6/5005 [46:31<640:48:15, 461.47s/it]  0%|          | 7/5005 [54:04<637:56:14, 459.50s/it]  0%|          | 7/5005 [53:56<637:28:32, 459.17s/it]  0%|          | 7/5005 [54:05<637:58:14, 459.52s/it]  0%|          | 7/5005 [54:07<638:03:20, 459.58s/it]  0%|          | 8/5005 [1:01:37<638:10:01, 459.76s/it]  0%|          | 8/5005 [1:01:45<638:31:39, 460.02s/it]  0%|          | 8/5005 [1:01:46<638:31:01, 460.01s/it]  0%|          | 8/5005 [1:01:48<638:33:44, 460.04s/it]  0%|          | 9/5005 [1:09:26<638:36:32, 460.17s/it]  0%|          | 9/5005 [1:09:28<638:39:12, 460.20s/it]  0%|          | 9/5005 [1:09:20<639:14:15, 460.62s/it]  0%|          | 9/5005 [1:09:28<639:29:23, 460.80s/it]  0%|          | 10/5005 [1:17:03<637:02:04, 459.12s/it]  0%|          | 10/5005 [1:17:06<637:21:08, 459.35s/it]  0%|          | 10/5005 [1:16:57<637:33:25, 459.50s/it]  0%|          | 10/5005 [1:17:05<637:59:56, 459.82s/it]  0%|          | 11/5005 [1:24:52<641:00:57, 462.09s/it]  0%|          | 11/5005 [1:24:52<641:00:42, 462.08s/it]  0%|          | 11/5005 [1:24:44<640:55:49, 462.02s/it]  0%|          | 11/5005 [1:24:55<641:27:36, 462.41s/it]  0%|          | 12/5005 [1:32:50<647:44:18, 467.03s/it]  0%|          | 12/5005 [1:32:42<647:28:17, 466.83s/it]  0%|          | 12/5005 [1:32:51<647:46:35, 467.05s/it]  0%|          | 12/5005 [1:32:53<647:49:48, 467.09s/it]  0%|          | 13/5005 [1:40:31<644:44:32, 464.96s/it]  0%|          | 13/5005 [1:40:31<644:42:38, 464.94s/it]  0%|          | 13/5005 [1:40:23<644:33:58, 464.83s/it]  0%|          | 13/5005 [1:40:33<644:47:29, 464.99s/it]  0%|          | 14/5005 [1:48:23<647:45:27, 467.23s/it]  0%|          | 14/5005 [1:48:25<647:45:42, 467.23s/it]  0%|          | 14/5005 [1:48:17<648:34:20, 467.81s/it]  0%|          | 14/5005 [1:48:26<648:42:04, 467.91s/it]  0%|          | 15/5005 [1:55:58<645:19:01, 465.56s/it]  0%|          | 15/5005 [1:56:08<645:42:41, 465.84s/it]  0%|          | 15/5005 [1:56:08<646:25:42, 466.36s/it]  0%|          | 15/5005 [1:56:08<646:07:22, 466.14s/it]  0%|          | 16/5005 [2:03:54<646:31:01, 466.52s/it]  0%|          | 16/5005 [2:03:46<646:28:27, 466.49s/it]  0%|          | 16/5005 [2:03:55<646:19:39, 466.38s/it]  0%|          | 16/5005 [2:03:57<646:45:57, 466.70s/it]  0%|          | 17/5005 [2:11:29<641:37:15, 463.08s/it]  0%|          | 17/5005 [2:11:30<641:27:42, 462.96s/it]  0%|          | 17/5005 [2:11:23<642:14:38, 463.53s/it]  0%|          | 17/5005 [2:11:33<642:27:50, 463.69s/it]  0%|          | 18/5005 [2:19:06<638:38:26, 461.02s/it]  0%|          | 18/5005 [2:19:06<638:46:43, 461.12s/it]  0%|          | 18/5005 [2:18:58<638:33:03, 460.96s/it]  0%|          | 18/5005 [2:19:08<638:39:36, 461.03s/it]  0%|          | 19/5005 [2:26:40<635:52:37, 459.12s/it]  0%|          | 19/5005 [2:26:32<635:43:56, 459.01s/it]  0%|          | 19/5005 [2:26:41<635:49:58, 459.09s/it]  0%|          | 19/5005 [2:26:43<635:50:26, 459.09s/it]  0%|          | 20/5005 [2:34:15<633:39:03, 457.60s/it]  0%|          | 20/5005 [2:34:15<633:35:59, 457.56s/it]  0%|          | 20/5005 [2:34:18<634:10:03, 457.97s/it]  0%|          | 20/5005 [2:34:08<634:10:34, 457.98s/it]Clipping input data to the valid range for imshow with RGB data ([0..1] for floats or [0..255] for integers).
+  0%|          | 21/5005 [2:41:42<632:34:34, 456.92s/it]  0%|          | 21/5005 [2:41:51<632:51:02, 457.12s/it]  0%|          | 21/5005 [2:41:53<632:37:02, 456.95s/it]  0%|          | 21/5005 [2:41:51<632:49:27, 457.10s/it]  0%|          | 22/5005 [2:49:25<631:44:47, 456.41s/it]  0%|          | 22/5005 [2:49:17<631:33:43, 456.28s/it]  0%|          | 22/5005 [2:49:26<631:43:04, 456.39s/it]  0%|          | 22/5005 [2:49:27<631:36:50, 456.31s/it]  0%|          | 23/5005 [2:57:00<630:50:58, 455.85s/it]  0%|          | 23/5005 [2:56:52<630:43:29, 455.76s/it]  0%|          | 23/5005 [2:57:02<630:44:32, 455.78s/it]  0%|          | 23/5005 [2:57:00<630:51:17, 455.86s/it]  0%|          | 24/5005 [3:04:34<630:09:07, 455.44s/it]  0%|          | 24/5005 [3:04:26<630:03:52, 455.38s/it]  0%|          | 24/5005 [3:04:35<630:11:02, 455.46s/it]  0%|          | 24/5005 [3:04:37<630:07:10, 455.42s/it]  0%|          | 25/5005 [3:12:13<631:29:28, 456.50s/it]  0%|          | 25/5005 [3:12:16<631:26:37, 456.47s/it]  0%|          | 25/5005 [3:12:07<632:23:29, 457.15s/it]  0%|          | 25/5005 [3:12:16<632:24:48, 457.17s/it]  1%|          | 26/5005 [3:20:05<637:32:18, 460.96s/it]  1%|          | 26/5005 [3:19:57<637:12:46, 460.73s/it]  1%|          | 26/5005 [3:20:07<637:29:18, 460.93s/it]  1%|          | 26/5005 [3:20:05<637:16:06, 460.77s/it]  1%|          | 27/5005 [3:27:39<634:47:54, 459.07s/it]  1%|          | 27/5005 [3:27:31<634:33:57, 458.91s/it]  1%|          | 27/5005 [3:27:42<634:45:41, 459.05s/it]  1%|          | 27/5005 [3:27:40<634:35:25, 458.92s/it]  1%|          | 28/5005 [3:35:06<632:53:01, 457.78s/it]  1%|          | 28/5005 [3:35:15<633:04:46, 457.92s/it]  1%|          | 28/5005 [3:35:17<633:03:05, 457.90s/it]  1%|          | 28/5005 [3:35:15<632:56:07, 457.82s/it]  1%|          | 29/5005 [3:43:05<638:05:40, 461.64s/it]  1%|          | 29/5005 [3:43:05<637:59:31, 461.57s/it]  1%|          | 29/5005 [3:42:58<638:36:30, 462.02s/it]  1%|          | 29/5005 [3:43:09<638:46:49, 462.14s/it]  1%|          | 30/5005 [3:50:57<642:05:50, 464.63s/it]  1%|          | 30/5005 [3:50:49<641:56:26, 464.52s/it]  1%|          | 30/5005 [3:50:57<642:14:00, 464.73s/it]  1%|          | 30/5005 [3:50:59<641:59:27, 464.56s/it]Clipping input data to the valid range for imshow with RGB data ([0..1] for floats or [0..255] for integers).
+  1%|          | 31/5005 [3:58:34<638:39:52, 462.24s/it]  1%|          | 31/5005 [3:58:36<638:36:32, 462.20s/it]Clipping input data to the valid range for imshow with RGB data ([0..1] for floats or [0..255] for integers).
+Clipping input data to the valid range for imshow with RGB data ([0..1] for floats or [0..255] for integers).
+  1%|          | 31/5005 [3:58:36<639:41:59, 462.99s/it]  1%|          | 31/5005 [3:58:28<639:31:29, 462.86s/it]  1%|          | 32/5005 [4:06:07<637:51:40, 461.75s/it]  1%|          | 32/5005 [4:06:15<638:01:03, 461.87s/it]  1%|          | 32/5005 [4:06:15<638:15:47, 462.04s/it]  1%|          | 32/5005 [4:06:17<638:10:48, 461.98s/it]  1%|          | 33/5005 [4:14:32<655:49:25, 474.85s/it]  1%|          | 33/5005 [4:14:40<655:56:14, 474.93s/it]  1%|          | 33/5005 [4:14:41<656:07:26, 475.07s/it]  1%|          | 33/5005 [4:14:43<656:03:15, 475.02s/it]  1%|          | 34/5005 [4:22:20<649:28:52, 470.35s/it]  1%|          | 34/5005 [4:22:20<649:37:59, 470.46s/it]  1%|          | 34/5005 [4:22:12<649:29:49, 470.37s/it]  1%|          | 34/5005 [4:22:22<649:37:27, 470.46s/it]  1%|          | 35/5005 [4:29:59<644:27:13, 466.81s/it]  1%|          | 35/5005 [4:30:01<644:31:17, 466.86s/it]  1%|          | 35/5005 [4:29:52<645:00:53, 467.21s/it]  1%|          | 35/5005 [4:30:00<645:08:59, 467.31s/it]  1%|          | 36/5005 [4:37:30<641:12:13, 464.55s/it]  1%|          | 36/5005 [4:37:41<641:27:26, 464.73s/it]  1%|          | 36/5005 [4:37:40<641:49:44, 465.00s/it]  1%|          | 36/5005 [4:37:40<642:03:23, 465.16s/it]  1%|          | 37/5005 [4:45:19<639:14:45, 463.22s/it]  1%|          | 37/5005 [4:45:19<639:12:23, 463.19s/it]  1%|          | 37/5005 [4:45:11<639:35:35, 463.47s/it]  1%|          | 37/5005 [4:45:22<639:46:22, 463.60s/it]  1%|          | 38/5005 [4:52:46<636:00:55, 460.97s/it]  1%|          | 38/5005 [4:52:57<636:07:49, 461.06s/it]  1%|          | 38/5005 [4:52:55<636:10:20, 461.09s/it]  1%|          | 38/5005 [4:52:55<636:08:27, 461.06s/it]  1%|          | 39/5005 [5:00:42<638:32:37, 462.90s/it]  1%|          | 39/5005 [5:00:34<638:34:12, 462.92s/it]  1%|          | 39/5005 [5:00:42<638:33:33, 462.91s/it]  1%|          | 39/5005 [5:00:44<638:38:47, 462.97s/it]  1%|          | 40/5005 [5:08:09<635:05:18, 460.49s/it]  1%|          | 40/5005 [5:08:17<635:06:06, 460.50s/it]  1%|          | 40/5005 [5:08:17<635:10:34, 460.55s/it]  1%|          | 40/5005 [5:08:19<635:13:42, 460.59s/it]Clipping input data to the valid range for imshow with RGB data ([0..1] for floats or [0..255] for integers).
+Clipping input data to the valid range for imshow with RGB data ([0..1] for floats or [0..255] for integers).
+  1%|          | 41/5005 [5:16:09<639:48:11, 464.00s/it]  1%|          | 41/5005 [5:16:01<639:50:32, 464.03s/it]  1%|          | 41/5005 [5:16:09<639:48:51, 464.01s/it]  1%|          | 41/5005 [5:16:11<639:50:45, 464.03s/it]  1%|          | 42/5005 [5:23:37<636:32:00, 461.72s/it]  1%|          | 42/5005 [5:23:45<636:33:42, 461.74s/it]  1%|          | 42/5005 [5:23:46<636:33:26, 461.74s/it]  1%|          | 42/5005 [5:23:48<636:35:17, 461.76s/it]  1%|          | 43/5005 [5:31:21<633:57:33, 459.95s/it]  1%|          | 43/5005 [5:31:21<633:55:49, 459.93s/it]  1%|          | 43/5005 [5:31:13<633:58:03, 459.95s/it]  1%|          | 43/5005 [5:31:23<633:58:07, 459.95s/it]  1%|          | 44/5005 [5:38:50<632:29:39, 458.98s/it]  1%|          | 44/5005 [5:39:00<632:30:16, 458.98s/it]  1%|          | 44/5005 [5:39:00<633:06:26, 459.42s/it]  1%|          | 44/5005 [5:39:00<633:09:03, 459.45s/it]  1%|          | 45/5005 [5:46:35<631:11:14, 458.12s/it]  1%|          | 45/5005 [5:46:26<631:25:27, 458.29s/it]  1%|          | 45/5005 [5:46:37<631:25:13, 458.29s/it]  1%|          | 45/5005 [5:46:35<631:15:08, 458.17s/it]  1%|          | 46/5005 [5:54:10<629:47:32, 457.20s/it]  1%|          | 46/5005 [5:54:10<629:46:00, 457.18s/it]  1%|          | 46/5005 [5:54:12<629:53:48, 457.28s/it]  1%|          | 46/5005 [5:54:01<629:55:50, 457.30s/it]  1%|          | 47/5005 [6:01:37<629:16:53, 456.92s/it]  1%|          | 47/5005 [6:01:48<629:15:55, 456.91s/it]  1%|          | 47/5005 [6:01:47<629:51:18, 457.34s/it]  1%|          | 47/5005 [6:01:48<629:51:25, 457.34s/it]  1%|          | 48/5005 [6:09:22<628:36:25, 456.52s/it]  1%|          | 48/5005 [6:09:14<628:51:33, 456.71s/it]  1%|          | 48/5005 [6:09:22<628:36:07, 456.52s/it]  1%|          | 48/5005 [6:09:24<628:53:24, 456.73s/it]../aten/src/ATen/native/cuda/ScatterGatherKernel.cu:144: operator(): block: [2351,0,0], thread: [37,0,0] Assertion `idx_dim >= 0 && idx_dim < index_size && "index out of bounds"` failed.
+  1%|          | 48/5005 [6:16:57<648:49:06, 471.20s/it]
+[W CUDAGuardImpl.h:124] Warning: CUDA warning: device-side assert triggered (function destroyEvent)
+terminate called after throwing an instance of 'c10::Error'
+  what():  CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1.
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+Exception raised from c10_cuda_check_implementation at ../c10/cuda/CUDAException.cpp:44 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::string) + 0x57 (0x14f8ecd514d7 in /fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/lib/libc10.so)
+frame #1: c10::detail::torchCheckFail(char const*, char const*, unsigned int, std::string const&) + 0x64 (0x14f8ecd1b36b in /fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/lib/libc10.so)
+frame #2: c10::cuda::c10_cuda_check_implementation(int, char const*, char const*, int, bool) + 0x118 (0x14f9597e3b58 in /fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/lib/libc10_cuda.so)
+frame #3: <unknown function> + 0x1c36b (0x14f9597b436b in /fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/lib/libc10_cuda.so)
+frame #4: <unknown function> + 0x2b930 (0x14f9597c3930 in /fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/lib/libc10_cuda.so)
+frame #5: <unknown function> + 0x4d5a16 (0x14f953641a16 in /fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/lib/libtorch_python.so)
+frame #6: <unknown function> + 0x3ee77 (0x14f8ecd36e77 in /fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/lib/libc10.so)
+frame #7: c10::TensorImpl::~TensorImpl() + 0x1be (0x14f8ecd2f69e in /fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/lib/libc10.so)
+frame #8: c10::TensorImpl::~TensorImpl() + 0x9 (0x14f8ecd2f7b9 in /fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/lib/libc10.so)
+frame #9: c10d::Reducer::~Reducer() + 0x254 (0x14f93f101124 in /fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/lib/libtorch_cpu.so)
+frame #10: std::_Sp_counted_ptr<c10d::Reducer*, (__gnu_cxx::_Lock_policy)2>::_M_dispose() + 0x12 (0x14f953cb6f12 in /fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/lib/libtorch_python.so)
+frame #11: std::_Sp_counted_base<(__gnu_cxx::_Lock_policy)2>::_M_release() + 0x48 (0x14f95351fae8 in /fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/lib/libtorch_python.so)
+frame #12: <unknown function> + 0xb4d511 (0x14f953cb9511 in /fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/lib/libtorch_python.so)
+frame #13: <unknown function> + 0x3bd6fb (0x14f9535296fb in /fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/lib/libtorch_python.so)
+frame #14: <unknown function> + 0x3be66f (0x14f95352a66f in /fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/lib/libtorch_python.so)
+<omitting python frames>
+frame #42: <unknown function> + 0x29590 (0x14f984629590 in /lib64/libc.so.6)
+frame #43: __libc_start_main + 0x80 (0x14f984629640 in /lib64/libc.so.6)
+frame #44: _start + 0x25 (0x401065 in /fp/projects01/ec232/venvs/g01env/bin/python3)
+
+Traceback (most recent call last):
+  File "/cluster/software/EL9/easybuild/software/Python/3.10.8-GCCcore-12.2.0/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/cluster/software/EL9/easybuild/software/Python/3.10.8-GCCcore-12.2.0/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/differentiableTokenizer/train.py", line 62, in <module>
+    mp.spawn(main, args=(world_size, sys.argv[1:]), nprocs=world_size)
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 239, in spawn
+    return start_processes(fn, args, nprocs, join, daemon, start_method='spawn')
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 197, in start_processes
+    while not context.join():
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 160, in join
+    raise ProcessRaisedException(msg, error_index, failed_process.pid)
+torch.multiprocessing.spawn.ProcessRaisedException: 
+
+-- Process 3 terminated with the following error:
+Traceback (most recent call last):
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 69, in _wrap
+    fn(i, *args)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/differentiableTokenizer/train.py", line 56, in main
+    trainer.train(args.epochs)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/train_utils.py", line 174, in train
+    self._run_epoch(epoch)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/train_utils.py", line 101, in _run_epoch
+    loss, preds, segments, gradient_map = self._run_batch(source, targets, train=True)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/train_utils.py", line 77, in _run_batch
+    loss.backward()
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/_tensor.py", line 487, in backward
+    torch.autograd.backward(
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/autograd/__init__.py", line 200, in backward
+    Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+RuntimeError: CUDA error: CUBLAS_STATUS_INTERNAL_ERROR when calling `cublasSgemm( handle, opa, opb, m, n, k, &alpha, a, lda, b, ldb, &beta, c, ldc)`
+
+
+Job 1439295 consumed 403.6 billing hours from project ec232.
+
+Submitted 2025-03-22T16:59:24; waited 0.0 seconds in the queue after becoming eligible to run.
+
+Requested wallclock time: 2.0 days
+Elapsed wallclock time:   6.3 hours
+
+Job failed.
+
+Task and CPU statistics:
+ID             CPUs  Tasks  CPU util                Start  Elapsed  Exit status
+1439295           4            0.0 %  2025-03-22T16:59:24    6.3 h  1
+1439295.batch     4      1   100.1 %  2025-03-22T16:59:24    6.3 h  1
+
+Used CPU time:   1.1 CPU days
+Unused CPU time: 0.0 CPU seconds
+
+Memory statistics, in GiB:
+ID              Alloc   Usage
+1439295         100.0        
+1439295.batch   100.0    24.3
+
+Job 1439295 completed at Sat Mar 22 23:17:48 CET 2025

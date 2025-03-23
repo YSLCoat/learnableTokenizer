@@ -1,0 +1,91 @@
+Starting job 1439296 on gpu-5 on fox at Sat Mar 22 16:59:33 CET 2025
+
+Number of available GPUs: 4
+GPU 0: NVIDIA GeForce RTX 3090
+GPU 1: NVIDIA GeForce RTX 3090
+GPU 2: NVIDIA GeForce RTX 3090
+GPU 3: NVIDIA GeForce RTX 3090
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+  0%|          | 0/5005 [00:00<?, ?it/s]  0%|          | 0/5005 [00:00<?, ?it/s]  0%|          | 0/5005 [00:00<?, ?it/s]  0%|          | 0/5005 [00:00<?, ?it/s]  0%|          | 0/5005 [00:42<?, ?it/s]
+  0%|          | 0/5005 [00:42<?, ?it/s]
+  0%|          | 0/5005 [00:46<?, ?it/s]
+  0%|          | 0/5005 [00:43<?, ?it/s]
+Traceback (most recent call last):
+  File "/cluster/software/EL9/easybuild/software/Python/3.10.8-GCCcore-12.2.0/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/cluster/software/EL9/easybuild/software/Python/3.10.8-GCCcore-12.2.0/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/differentiableTokenizer/train.py", line 62, in <module>
+    mp.spawn(main, args=(world_size, sys.argv[1:]), nprocs=world_size)
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 239, in spawn
+    return start_processes(fn, args, nprocs, join, daemon, start_method='spawn')
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 197, in start_processes
+    while not context.join():
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 160, in join
+    raise ProcessRaisedException(msg, error_index, failed_process.pid)
+torch.multiprocessing.spawn.ProcessRaisedException: 
+
+-- Process 1 terminated with the following error:
+Traceback (most recent call last):
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 69, in _wrap
+    fn(i, *args)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/differentiableTokenizer/train.py", line 56, in main
+    trainer.train(args.epochs)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/train_utils.py", line 174, in train
+    self._run_epoch(epoch)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/train_utils.py", line 101, in _run_epoch
+    loss, preds, segments, gradient_map = self._run_batch(source, targets, train=True)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/train_utils.py", line 75, in _run_batch
+    final_embeddings, reconstructed_img, segments, gradient_map = self.model(source)
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1501, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/nn/parallel/distributed.py", line 1156, in forward
+    output = self._run_ddp_forward(*inputs, **kwargs)
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/nn/parallel/distributed.py", line 1110, in _run_ddp_forward
+    return module_to_run(*inputs[0], **kwargs[0])  # type: ignore[index]
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1501, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/model.py", line 114, in forward
+    centroid_coords, segments = self.superpixel_algorithm(img, gradient_map)
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1501, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/differentiableTokenizer/model.py", line 444, in forward
+    centroids = self.compute_centroids(new_segmentation_mask)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/differentiableTokenizer/model.py", line 395, in compute_centroids
+    sums_y = torch.zeros(K, device=self.device, dtype=torch.float32)
+TypeError: zeros() received an invalid combination of arguments - got (float, dtype=torch.dtype, device=str), but expected one of:
+ * (tuple of ints size, *, tuple of names names, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+ * (tuple of ints size, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+
+
+
+Job 1439296 consumed 1.8 billing hours from project ec232.
+
+Submitted 2025-03-22T16:59:32; waited 0.0 seconds in the queue after becoming eligible to run.
+
+Requested wallclock time: 2.0 days
+Elapsed wallclock time:   1.7 minutes
+
+Job failed.
+
+Task and CPU statistics:
+ID             CPUs  Tasks  CPU util                Start  Elapsed  Exit status
+1439296           4            0.0 %  2025-03-22T16:59:32  101.0 s  1
+1439296.batch     4      1   148.4 %  2025-03-22T16:59:32  101.0 s  1
+
+Used CPU time:   10.0 CPU minutes
+Unused CPU time: 0.0 CPU seconds
+
+Memory statistics, in GiB:
+ID              Alloc   Usage
+1439296         100.0        
+1439296.batch   100.0    21.8
+
+Job 1439296 completed at Sat Mar 22 17:01:13 CET 2025
