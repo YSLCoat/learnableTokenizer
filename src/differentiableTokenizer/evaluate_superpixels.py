@@ -6,22 +6,17 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from torchvision import transforms
 
-# For scikit-image segmentation methods
 from skimage.segmentation import slic, watershed
 from skimage.filters import sobel
 from skimage.color import rgb2gray
 from skimage.feature import peak_local_max
 
-# Import your dataset, model, and training utilities
-# (Make sure these modules are in your PYTHONPATH or the same package)
 from .datasets import BSDS500Dataset
 from .metrics import explained_variance_batch
 from model import DifferentiableSuperpixelTokenizer
 from train_utils import prepare_dataloader_tokenizer_training, prepare_datasets_tokenizer_training
 
-# -------------------------------
-# Helper functions for evaluation
-# -------------------------------
+
 def reconstruct_from_segments(image, segments):
     """
     Given an image (H, W, C) and segmentation labels (H, W), compute a 
@@ -97,9 +92,6 @@ def evaluate_scikit_method(method, dataloader):
             ev_list.append(ev)
     return np.mean(ev_list)
 
-# -------------------------------
-# Main function for argument parsing
-# -------------------------------
 def main():
     parser = argparse.ArgumentParser(
         description="Evaluate and compare superpixel segmentation methods"
@@ -133,11 +125,6 @@ def main():
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # -------------------------------
-    # Prepare the dataset and dataloader
-    # -------------------------------
-    # When using a PyTorch model, use the same normalization as during training.
-    # For scikit methods, skip normalization so the segmentation works on raw intensities.
     if args.use_bsds:
         if args.method == "pytorch":
             transform = transforms.Compose([
@@ -154,23 +141,18 @@ def main():
         dataset = BSDS500Dataset(root_dir=args.data_path, split="val", transform=transform)
         dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
     else:
-        # Alternatively, use your custom dataset and dataloader preparation
         train_dataset, val_dataset = prepare_datasets_tokenizer_training(args)
         if args.method == "pytorch":
             dataloader = prepare_dataloader_tokenizer_training(val_dataset, args.batch_size, False, 0)
         else:
-            # Override transform for scikit methods (remove normalization)
             val_dataset.transform = transforms.Compose([
                 transforms.Resize((args.img_size, args.img_size)),
                 transforms.ToTensor(),
             ])
             dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
-    # -------------------------------
-    # Evaluate the chosen method
-    # -------------------------------
     if args.method == "pytorch":
-        NUM_CLUSTERS = 196  # Make sure this matches your training configuration
+        NUM_CLUSTERS = 196 
         model = DifferentiableSuperpixelTokenizer(
             max_segments=NUM_CLUSTERS,
             n_channels=3,
