@@ -531,146 +531,156 @@ class SLICSegmentation(nn.Module):
         
         return torch.stack(updated_centroids, dim=0)
 
-    def SLIC_vectorized(self, centroids, x, max_iter=50, m=10.0):
+    def SLIC_vectorized(
+        self, centroids, x, max_iter=10, m=10.0, chunk_size=50
+    ):
         """
-        Perform SLIC-like clustering to generate superpixels in a fully vectorized way.
+        A chunked, memory-friendly version of the fully vectorized SLIC.
 
         Args:
-            centroids (Tensor):  (B, C, 2) initial centroid positions (y, x).
-            x         (Tensor):  (B, C_in, H, W) input image or feature map.
-            max_iter    (int):   Number of SLIC iterations.
-            m         (float):   Weighting factor for spatial distance vs. color distance.
+        centroids: (B, C, 2) initial centroid positions (y, x).
+        x: (B, C_in, H, W) input image or feature map.
+        max_iter: number of SLIC iterations.
+        m: weighting factor for spatial vs. color distance.
+        chunk_size: how many clusters to process per chunk (reduces memory usage).
 
         Returns:
-            label_map (Tensor): (B, H, W) of integer cluster assignments for each pixel.
+        label_map: (B, H, W) cluster assignments
         """
         device = x.device
         B, C_in, H, W = x.shape
         C = centroids.shape[1]
 
-        # S ~ approximate spacing between clusters
+        # Approximate cluster spacing
         S = math.sqrt(H * W / C)
-        # We'll use squared distance to avoid expensive sqrt
+        # We'll use squared distance for efficiency
         m_s_sq = (m / S) ** 2
 
-        # 1) Round & clamp the initial centroid positions
+        # Round & clamp initial centroid positions
         yc = torch.round(centroids[..., 0]).long().clamp(0, H - 1)  # (B, C)
         xc = torch.round(centroids[..., 1]).long().clamp(0, W - 1)  # (B, C)
 
-        # 2) Initialize centroid colors by sampling from x at those positions
-        #    shape = (B, C, C_in)
-        centroid_colors = []
+        # Initialize centroid colors by sampling from x
+        centroid_colors = torch.zeros((B, C, C_in), device=device)
         for b_idx in range(B):
-            # gather all cluster colors in this image
-            colors_b = []
             for c_idx in range(C):
                 yy = yc[b_idx, c_idx]
                 xx = xc[b_idx, c_idx]
-                colors_b.append(x[b_idx, :, yy, xx])  # shape (C_in,)
-            centroid_colors.append(torch.stack(colors_b, dim=0))  # (C, C_in)
-        centroid_colors = torch.stack(centroid_colors, dim=0)  # (B, C, C_in)
+                centroid_colors[b_idx, c_idx] = x[b_idx, :, yy, xx]
 
-        # 3) Precompute a full coordinate grid for spatial distances
-        #    shapes => Y, X: (H, W) => expand to (1,1,H,W) for broadcast
+        # Precompute coordinate grid for entire image
+        # (H, W) => broadcast to (1,1,H,W)
         Y = torch.arange(H, device=device).view(1, 1, H, 1)
         X = torch.arange(W, device=device).view(1, 1, 1, W)
 
-        # 4) Iterative updates
-        for _ in range(max_iter):
-            # Expand centroid colors to broadcast: (B, C, C_in) -> (B, C, C_in, 1, 1)
-            centroid_colors_exp = centroid_colors.unsqueeze(-1).unsqueeze(-1)  # (B, C, C_in, 1, 1)
+        # We'll keep label_map/distance_map for the entire image
+        label_map = torch.full((B, H, W), -1, device=device, dtype=torch.long)
+        distance_map = torch.full((B, H, W), float('inf'), device=device)
 
-            # Expand image for color distance: (B, C_in, H, W) -> (B, 1, C_in, H, W)
-            x_exp = x.unsqueeze(1)  # (B, 1, C_in, H, W)
+        for _iter in range(max_iter):
+            # --- Assignment step (chunked) ---
+            # Reset the distance map to "infinity" for this iteration
+            distance_map.fill_(float('inf'))
+            label_map.fill_(-1)
 
-            # color_dist_sq => (B, C, H, W)
-            color_dist_sq = (x_exp - centroid_colors_exp).pow(2).sum(dim=2)  # sum over C_in
+            # We'll chunk over the C dimension
+            start = 0
+            while start < C:
+                end = min(start + chunk_size, C)
 
-            # For spatial_dist, we need each centroid's (yc, xc):
-            # yc, xc => (B, C). We expand to => (B, C, 1, 1)
-            # Then subtract from coordinate grid shape => (1, 1, H, W)
-            yc_exp = yc.view(B, C, 1, 1)
-            xc_exp = xc.view(B, C, 1, 1)
+                # Extract the relevant chunk
+                yc_chunk = yc[:, start:end]           # shape (B, chunk_size)
+                xc_chunk = xc[:, start:end]
+                ccol_chunk = centroid_colors[:, start:end]  # (B, chunk_size, C_in)
 
-            spatial_dist_sq = (Y - yc_exp).pow(2) + (X - xc_exp).pow(2)  # (B, C, H, W)
+                # Expand them for distance computations
+                # color => (B, chunk_size, C_in, 1, 1)
+                ccol_chunk_exp = ccol_chunk.unsqueeze(-1).unsqueeze(-1)
 
-            dist_sq = color_dist_sq + m_s_sq * spatial_dist_sq  # (B, C, H, W)
+                # x => (B, 1, C_in, H, W)
+                x_exp = x.unsqueeze(1)  # doesn't expand chunk_size yet
 
-            # 5) Argmin over cluster dimension => label each pixel
-            label_map = dist_sq.argmin(dim=1)  # shape (B, H, W)
+                # color_dist_sq => (B, chunk_size, H, W)
+                color_dist_sq = (x_exp - ccol_chunk_exp).pow(2).sum(dim=2)
 
-            # 6) Update the centroid positions & colors in a fully vectorized manner
-            #    We'll do it by summing all pixel positions & colors assigned to each cluster,
-            #    then dividing by the pixel count for each cluster.
+                # spatial => (B, chunk_size, H, W)
+                yc_chunk_exp = yc_chunk.view(B, -1, 1, 1)  # (B, chunk_size, 1, 1)
+                xc_chunk_exp = xc_chunk.view(B, -1, 1, 1)
 
-            new_yc = torch.zeros_like(yc)  # (B, C)
-            new_xc = torch.zeros_like(xc)  # (B, C)
-            new_centroid_colors = torch.zeros_like(centroid_colors)  # (B, C, C_in)
+                spatial_dist_sq = (Y - yc_chunk_exp).pow(2) + (X - xc_chunk_exp).pow(2)
 
-            # We'll do the update per-batch to keep it simpler
+                dist_sq = color_dist_sq + m_s_sq * spatial_dist_sq
+
+                # Compare with the global distance map
+                #  - distance_map: (B, H, W)
+                #  - dist_sq:      (B, chunk_size, H, W)
+                # We want to see if dist_sq < distance_map for each pixel
+                # For that, we need a broadcast along chunk_size dimension.
+
+                # We'll do an elementwise comparison for each cluster in this chunk.
+                # A straightforward way: loop over chunk dimension in *PyTorch* (still GPU vector),
+                # or do a gather-based approach.
+
+                # We'll do a quick approach: for each cluster idx in [start..end-1],
+                # compare slice with distance_map and update as needed.
+                # This is still vectorized over (B,H,W), but it's a small loop over chunk_size.
+                for i, c_id in enumerate(range(start, end)):
+                    d_sq = dist_sq[:, i]  # shape (B,H,W)
+                    mask = d_sq < distance_map
+                    distance_map[mask] = d_sq[mask]
+                    label_map[mask] = c_id
+
+                start = end
+
+            # --- Update centroid positions/colors ---
+            # We'll do the same approach as in the fully-vectorized code:
+            new_yc = yc.clone()
+            new_xc = xc.clone()
+            new_centroid_colors = centroid_colors.clone()
+
             for b_idx in range(B):
-                # Flatten the label_map for this image
-                labels_b = label_map[b_idx].view(-1)  # shape (H*W,)
-                # Flatten the color for this image: (C_in, H*W)
-                color_b = x[b_idx].view(C_in, -1)
-                # Coordinates for each pixel
+                labels_b = label_map[b_idx].view(-1)        # (H*W,)
+                color_b = x[b_idx].view(C_in, -1)           # (C_in, H*W)
                 y_coords = torch.arange(H, device=device).unsqueeze(1).expand(H, W).reshape(-1)
                 x_coords = torch.arange(W, device=device).unsqueeze(0).expand(H, W).reshape(-1)
 
-                # We need to accumulate sums of y, sums of x, sums of colors, and counts
-                # for each cluster ID in [0..C-1].
-                # shape (C,) for sums of y, sums of x, counts
                 sum_y = torch.zeros(C, device=device, dtype=torch.float)
                 sum_x = torch.zeros(C, device=device, dtype=torch.float)
                 count = torch.zeros(C, device=device, dtype=torch.float)
-
-                # shape (C, C_in) for color sums
                 sum_color = torch.zeros(C, C_in, device=device, dtype=torch.float)
 
-                # We can use scatter_add_ or index_add_:
+                # index_add_ to accumulate sums
                 sum_y.index_add_(0, labels_b, y_coords.float())
                 sum_x.index_add_(0, labels_b, x_coords.float())
                 count.index_add_(0, labels_b, torch.ones_like(labels_b, dtype=torch.float))
 
-                # For color, we need to do it per channel
-                # color_b: (C_in, H*W), labels_b: (H*W,)
-                # We'll transpose color_b => (H*W, C_in) so we can index_add along dimension 0
+                # color_b => (C_in, H*W). We'll transpose for index_add
                 color_b_t = color_b.t()  # (H*W, C_in)
-                # We do scatter-add or index_add for each channel
-                # We'll do a loop over channels or create an index for each pixel–channel pair
-                # but simpler is to do channel by channel in a loop:
                 for c_in_idx in range(C_in):
-                    sum_color_channel = sum_color[:, c_in_idx]  # (C,)
-                    sum_color_channel.index_add_(0, labels_b, color_b_t[:, c_in_idx])
-                    # store back
-                    sum_color[:, c_in_idx] = sum_color_channel
+                    sum_color[:, c_in_idx].index_add_(
+                        0, labels_b, color_b_t[:, c_in_idx]
+                    )
 
-                # Now compute new centroid positions/colors
-                # Avoid dividing by zero for clusters that got no pixels
-                # We'll keep old position/color if count == 0
+                # Now compute new means
                 nonzero_mask = (count > 0)
+                new_y = (sum_y[nonzero_mask] / count[nonzero_mask]).round().long().clamp(0, H - 1)
+                new_x = (sum_x[nonzero_mask] / count[nonzero_mask]).round().long().clamp(0, W - 1)
+                new_colors = sum_color[nonzero_mask] / count[nonzero_mask].unsqueeze(-1)
 
-                new_y = sum_y[nonzero_mask] / count[nonzero_mask]
-                new_x = sum_x[nonzero_mask] / count[nonzero_mask]
-                new_color = sum_color[nonzero_mask] / count[nonzero_mask].unsqueeze(-1)
-
-                # Write them back into new_yc, etc.
-                # cluster IDs for those non-empty clusters
+                # Put them back
                 nonzero_ids = torch.nonzero(nonzero_mask, as_tuple=True)[0]
-                new_yc[b_idx, nonzero_ids] = new_y.round().long().clamp(0, H - 1)
-                new_xc[b_idx, nonzero_ids] = new_x.round().long().clamp(0, W - 1)
-                new_centroid_colors[b_idx, nonzero_ids] = new_color
+                new_yc[b_idx, nonzero_ids] = new_y
+                new_xc[b_idx, nonzero_ids] = new_x
+                new_centroid_colors[b_idx, nonzero_ids] = new_colors
 
-                # For empty clusters, keep old positions/colors
-                # (Already in new_yc / new_xc / new_centroid_colors as zeros,
-                #  so we can revert to old ones if you prefer)
+                # For empty clusters, keep old positions & colors
                 empty_ids = torch.nonzero(~nonzero_mask, as_tuple=True)[0]
                 if len(empty_ids) > 0:
                     new_yc[b_idx, empty_ids] = yc[b_idx, empty_ids]
                     new_xc[b_idx, empty_ids] = xc[b_idx, empty_ids]
                     new_centroid_colors[b_idx, empty_ids] = centroid_colors[b_idx, empty_ids]
 
-            # Save updated centroids
+            # Save for next iteration
             yc = new_yc
             xc = new_xc
             centroid_colors = new_centroid_colors
