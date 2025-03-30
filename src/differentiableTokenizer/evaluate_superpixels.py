@@ -1,7 +1,7 @@
 import argparse
 import torch
 import numpy as np
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from torchvision import transforms
@@ -11,11 +11,74 @@ from skimage.filters import sobel
 from skimage.color import rgb2gray
 from skimage.feature import peak_local_max
 
-from .datasets import BSDS500Dataset
-from .metrics import explained_variance_batch
+from datasets import BSDS500Dataset
+from metrics import explained_variance_batch
 from model import DifferentiableSuperpixelTokenizer
-from train_utils import prepare_dataloader_tokenizer_training, prepare_datasets_tokenizer_training
+# from train_utils import prepare_dataloader_tokenizer_training, prepare_datasets_tokenizer_training
 
+import torch.nn as nn
+
+def prepare_dataloader_tokenizer_training(dataset: Dataset, batch_size: int, shuffle: bool, num_workers: int):
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        pin_memory=True,
+        shuffle=shuffle,
+        num_workers=num_workers,
+    )
+
+
+def prepare_datasets_tokenizer_training(args):
+    # Define the postprocessing transformations
+    postprocess_train = (
+        transforms.Compose([
+            transforms.Resize((args.img_size, args.img_size)),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=(0.485, 0.456, 0.406),
+                std=(0.229, 0.224, 0.225)
+            ),
+        ]),
+        nn.Identity(),
+    )
+
+    # Define the postprocessing transformations for validation
+    postprocess_val = (
+        transforms.Compose([
+            transforms.Resize((args.img_size, args.img_size)),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=(0.485, 0.456, 0.406),
+                std=(0.229, 0.224, 0.225)
+            ),
+        ]),
+        nn.Identity(),
+    )
+    
+    # Create the training dataset
+    train_dataset = quixdata.QuixDataset(
+        args.data_folder_name,
+        args.data_subfolder_path,
+        override_extensions=[
+            'jpg',
+            'cls'
+        ],
+        train=True,
+    ).map_tuple(*postprocess_train)
+
+    # Create the validation dataset
+    val_dataset = quixdata.QuixDataset(
+        args.data_folder_name,
+        args.data_subfolder_path,
+        override_extensions=[
+            'jpg',
+            'cls'
+        ],
+        train=False,
+    ).map_tuple(*postprocess_val)
+    
+    return train_dataset, val_dataset
+    
 
 def reconstruct_from_segments(image, segments):
     """
@@ -54,7 +117,7 @@ def evaluate_pytorch_model(model, dataloader, device):
             images = batch[0] if isinstance(batch, (list, tuple)) else batch
             images = images.to(device)
             # Forward pass: obtain segmentation and reconstructed image
-            _, _, segments = model(images)
+            final_embeddings, reconstructed_img, segments, gradient_map = model(images)
             # Compute explained variance using your provided metric
             ev_scores = explained_variance_batch(images, segments)
             ev_list.append(np.mean(ev_scores))
@@ -80,7 +143,7 @@ def evaluate_scikit_method(method, dataloader):
                 # Compute gradient using sobel on a grayscale version
                 gradient = sobel(rgb2gray(img))
                 # Identify local minima as markers
-                coordinates = peak_local_max(-gradient, min_distance=5, indices=True)
+                coordinates = peak_local_max(-gradient, min_distance=5)
                 markers = np.zeros(gradient.shape, dtype=int)
                 for i, (r, c) in enumerate(coordinates, 1):
                     markers[r, c] = i
@@ -123,7 +186,7 @@ def main():
     if args.method == "pytorch" and args.model_path is None:
         parser.error("--model_path is required when method is 'pytorch'")
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = 'cpu'#"cuda" if torch.cuda.is_available() else "cpu"
 
     if args.use_bsds:
         if args.method == "pytorch":
@@ -138,7 +201,7 @@ def main():
                 transforms.Resize((args.img_size, args.img_size)),
                 transforms.ToTensor()  # values in [0,1]
             ])
-        dataset = BSDS500Dataset(root_dir=args.data_path, split="val", transform=transform)
+        dataset = BSDS500Dataset(root_dir=args.data_path, split="test", transform=transform)
         dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
     else:
         train_dataset, val_dataset = prepare_datasets_tokenizer_training(args)
