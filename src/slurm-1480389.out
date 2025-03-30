@@ -1,0 +1,88 @@
+Starting job 1480389 on gpu-11 on fox at Sun Mar 30 19:55:50 CEST 2025
+
+Number of available GPUs: 4
+GPU 0: NVIDIA GeForce RTX 3090
+GPU 1: NVIDIA GeForce RTX 3090
+GPU 2: NVIDIA GeForce RTX 3090
+GPU 3: NVIDIA GeForce RTX 3090
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+  0%|          | 0/5005 [00:00<?, ?it/s]  0%|          | 0/5005 [00:00<?, ?it/s]  0%|          | 0/5005 [00:00<?, ?it/s]  0%|          | 0/5005 [00:00<?, ?it/s]  0%|          | 0/5005 [00:32<?, ?it/s]
+  0%|          | 0/5005 [00:32<?, ?it/s]
+terminate called without an active exception
+  0%|          | 0/5005 [00:30<?, ?it/s]
+Traceback (most recent call last):
+  File "/cluster/software/EL9/easybuild/software/Python/3.10.8-GCCcore-12.2.0/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/cluster/software/EL9/easybuild/software/Python/3.10.8-GCCcore-12.2.0/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/differentiableTokenizer/train.py", line 62, in <module>
+    mp.spawn(main, args=(world_size, sys.argv[1:]), nprocs=world_size)
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 239, in spawn
+    return start_processes(fn, args, nprocs, join, daemon, start_method='spawn')
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 197, in start_processes
+    while not context.join():
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 160, in join
+    raise ProcessRaisedException(msg, error_index, failed_process.pid)
+torch.multiprocessing.spawn.ProcessRaisedException: 
+
+-- Process 0 terminated with the following error:
+Traceback (most recent call last):
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 69, in _wrap
+    fn(i, *args)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/differentiableTokenizer/train.py", line 56, in main
+    trainer.train(args.epochs)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/train_utils.py", line 174, in train
+    self._run_epoch(epoch)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/train_utils.py", line 101, in _run_epoch
+    loss, preds, segments, gradient_map = self._run_batch(source, targets, train=True)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/train_utils.py", line 75, in _run_batch
+    final_embeddings, reconstructed_img, segments, gradient_map = self.model(source)
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1501, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/nn/parallel/distributed.py", line 1156, in forward
+    output = self._run_ddp_forward(*inputs, **kwargs)
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/nn/parallel/distributed.py", line 1110, in _run_ddp_forward
+    return module_to_run(*inputs[0], **kwargs[0])  # type: ignore[index]
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1501, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/model.py", line 114, in forward
+    centroid_coords, segments = self.superpixel_algorithm(img, gradient_map)
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1501, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/differentiableTokenizer/model.py", line 977, in forward
+    mask = self.SLIC_vectorized(centroids, x, max_iter=50, m=20.0)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/differentiableTokenizer/model.py", line 863, in SLIC_vectorized
+    color_dist_sq = (x_exp - centroid_colors_exp).pow(2).sum(dim=2)  # sum over C_in
+torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 3.52 GiB (GPU 0; 23.57 GiB total capacity; 10.93 GiB already allocated; 1.85 GiB free; 16.28 GiB reserved in total by PyTorch) If reserved memory is >> allocated memory try setting max_split_size_mb to avoid fragmentation.  See documentation for Memory Management and PYTORCH_CUDA_ALLOC_CONF
+
+
+Job 1480389 consumed 1.8 billing hours from project ec232.
+
+Submitted 2025-03-30T19:55:49; waited 0.0 seconds in the queue after becoming eligible to run.
+
+Requested wallclock time: 2.0 days
+Elapsed wallclock time:   1.7 minutes
+
+Job failed.
+
+Task and CPU statistics:
+ID             CPUs  Tasks  CPU util                Start  Elapsed  Exit status
+1480389           4            0.0 %  2025-03-30T19:55:49  103.0 s  1
+1480389.batch     4      1   114.6 %  2025-03-30T19:55:49  103.0 s  1
+
+Used CPU time:   7.9 CPU minutes
+Unused CPU time: 0.0 CPU seconds
+
+Memory statistics, in GiB:
+ID              Alloc   Usage
+1480389         100.0        
+1480389.batch   100.0     9.4
+
+Job 1480389 completed at Sun Mar 30 19:57:33 CEST 2025

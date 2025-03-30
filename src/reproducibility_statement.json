@@ -16,7 +16,7 @@
     "n_classes": 1000,
     "n_channels": 3,
     "img_size": 224,
-    "n_segments": 98,
+    "n_segments": 196,
     "model_save_path": "trained_model.pt",
     "pretrained_model_path": null,
     "train_from_checkpoint": false,

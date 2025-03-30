@@ -1,0 +1,32 @@
+Starting job 1480412 on gpu-11 on fox at Sun Mar 30 20:11:07 CEST 2025
+
+Number of available GPUs: 4
+GPU 0: NVIDIA GeForce RTX 3090
+GPU 1: NVIDIA GeForce RTX 3090
+GPU 2: NVIDIA GeForce RTX 3090
+GPU 3: NVIDIA GeForce RTX 3090
+slurmstepd: error: *** JOB 1480412 ON gpu-11 CANCELLED AT 2025-03-30T20:24:11 ***
+
+Job 1480412 consumed 13.9 billing hours from project ec232.
+
+Submitted 2025-03-30T20:10:45; waited 22.0 seconds in the queue after becoming eligible to run.
+
+Requested wallclock time: 2.0 days
+Elapsed wallclock time:   13.1 minutes
+
+Job was cancelled.
+
+Task and CPU statistics:
+ID             CPUs  Tasks  CPU util                Start  Elapsed  Exit status
+1480412           4            0.0 %  2025-03-30T20:11:07  784.0 s  0
+1480412.batch     4      1     1.4 %  2025-03-30T20:11:07  787.0 s  Signal 15
+
+Used CPU time:   42.7 CPU seconds
+Unused CPU time: 51.6 CPU minutes
+
+Memory statistics, in GiB:
+ID              Alloc   Usage
+1480412         100.0        
+1480412.batch   100.0     1.5
+
+Job 1480412 completed at Sun Mar 30 20:24:16 CEST 2025
