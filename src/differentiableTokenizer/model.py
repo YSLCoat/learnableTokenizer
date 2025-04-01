@@ -532,7 +532,7 @@ class SLICSegmentation(nn.Module):
         return torch.stack(updated_centroids, dim=0)
 
     def SLIC_vectorized(
-        self, centroids, x, max_iter=10, m=10.0, chunk_size=50
+        self, centroids, x, max_iter=20, m=10.0, chunk_size=50
     ):
         """
         A chunked, memory-friendly version of the fully vectorized SLIC.
