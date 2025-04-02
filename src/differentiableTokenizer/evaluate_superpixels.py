@@ -6,10 +6,13 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from torchvision import transforms
 
+from PIL import Image  # for loading a single image
+
 from skimage.segmentation import slic, watershed
 from skimage.filters import sobel
 from skimage.color import rgb2gray
 from skimage.feature import peak_local_max
+from skimage.segmentation import mark_boundaries
 
 from datasets import BSDS500Dataset
 from metrics import explained_variance_batch
@@ -92,6 +95,43 @@ def reconstruct_from_segments(image, segments):
         reconstructed[mask] = mean_color
     return reconstructed
 
+def reconstruct_from_segments_torch(image, segments):
+    """
+    Given an image (H, W, C) that is normalized by ImageNet stats
+    (mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    compute a reconstructed image by replacing each segment
+    with its mean color in *unnormalized* space.
+
+    Parameters
+    ----------
+    image : np.ndarray, shape (H, W, C)
+        The input image, normalized by ImageNet coefficients.
+    segments : np.ndarray, shape (H, W)
+        An integer label mask defining superpixel segments.
+
+    Returns
+    -------
+    reconstructed : np.ndarray, shape (H, W, C)
+        The unnormalized reconstruction, clipped to [0, 1].
+    """
+
+    # 1) Unnormalize using ImageNet statistics
+    mean = np.array([0.485, 0.456, 0.406])
+    std  = np.array([0.229, 0.224, 0.225])
+    unnorm_image = image * std + mean  # broadcast each channel: image[..., c] = image[..., c]*std[c] + mean[c]
+
+    # 2) Reconstruct by segment-wise mean color
+    reconstructed = np.zeros_like(unnorm_image)
+    unique_segments = np.unique(segments)
+    for seg_val in unique_segments:
+        mask = (segments == seg_val)
+        mean_color = unnorm_image[mask].mean(axis=0)  # shape (3,)
+        reconstructed[mask] = mean_color
+
+    # 3) Clip to ensure [0,1]
+    reconstructed = np.clip(reconstructed, 0, 1)
+    return reconstructed
+
 def compute_explained_variance(image, reconstructed):
     """
     Compute the explained variance score:
@@ -155,6 +195,191 @@ def evaluate_scikit_method(method, dataloader):
             ev_list.append(ev)
     return np.mean(ev_list)
 
+
+def visualize_segments(
+    image_path: str,
+    method: str,
+    model_path: str = None,
+    device: str = "cpu",
+    img_size: int = 224,
+    num_segments: int = 196
+):
+    """
+    Load a single image from `image_path`, segment it using the specified `method`,
+    and visualize the following:
+      1) The original image (resized)
+      2) The superpixel boundaries (via mark_boundaries)
+      3) The reconstructed image
+      4) The gradient map (if available)
+
+    Parameters:
+    -----------
+    image_path : str
+        Path to the input image.
+    method : str
+        One of ['slic', 'watershed', 'pytorch'].
+    model_path : str, optional
+        Path to the PyTorch model checkpoint (required if `method=='pytorch'`).
+    device : str, optional
+        Device to run the model on ('cpu' or 'cuda').
+    img_size : int, optional
+        Size at which to resize the image for segmentation.
+    num_segments : int, optional
+        Number of segments to use for SLIC or the PyTorch model.
+    """
+
+    # 1) Load image with PIL and convert to RGB
+    pil_img = Image.open(image_path).convert('RGB')
+
+    # 2) Prepare transforms
+    if method == 'pytorch':
+        # Same transform as training (with normalization)
+        transform = transforms.Compose([
+            transforms.Resize((img_size, img_size)),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=(0.485, 0.456, 0.406),
+                std=(0.229, 0.224, 0.225)
+            ),
+        ])
+    else:
+        # SLIC or Watershed: keep values in [0,1], no normalization
+        transform = transforms.Compose([
+            transforms.Resize((img_size, img_size)),
+            transforms.ToTensor()
+        ])
+
+    # Apply transform
+    input_tensor = transform(pil_img)  # (C, H, W), values in [0,1] (if scikit)
+    input_batch = input_tensor.unsqueeze(0)  # (1, C, H, W)
+
+    # Convert to numpy for scikit or reconstruction operations
+    # shape (H, W, C)
+    img_np = input_tensor.permute(1, 2, 0).numpy()
+
+    # 3) Segment the image & produce the gradient map
+    segments = None
+    gradient_map = None
+    reconstructed = None
+
+    if method == 'pytorch':
+        if model_path is None:
+            raise ValueError("Please provide model_path when method='pytorch'.")
+
+        # Load the model
+        model = DifferentiableSuperpixelTokenizer(
+            max_segments=num_segments,
+            n_channels=3,
+            use_positional_embeddings=False,
+            reconstruction=True,
+            embed_dim=192,
+            device=device,
+            superpixel_algorithm="boundary_path_finder"
+        ).to(device)
+
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        model.eval()
+
+        with torch.no_grad():
+            input_batch = input_batch.to(device)
+            # The model returns:
+            #  final_embeddings, reconstructed_img, segments, gradient_map
+            _, _, segs, grad_map = model(input_batch)
+            segments = segs[0].cpu().numpy()  # shape (H, W)
+            # The gradient_map might be (B,1,H,W) or (B,H,W). Adjust as needed
+            grad_map = grad_map[0].cpu().numpy()
+            if len(grad_map.shape) == 3:
+                grad_map = grad_map[0]  # remove channel dim if present
+            gradient_map = grad_map  # shape (H, W)
+
+        # Reconstruct via our existing function
+        reconstructed = reconstruct_from_segments_torch(img_np, segments)
+
+    elif method == 'watershed':
+        # We do the sobel gradient in grayscale
+        gray = rgb2gray(img_np)
+        grad_map = sobel(gray)
+        # Identify local minima as markers
+        coordinates = peak_local_max(-grad_map, min_distance=5)
+        markers = np.zeros(grad_map.shape, dtype=int)
+        for i, (r, c) in enumerate(coordinates, 1):
+            markers[r, c] = i
+        segments = watershed(grad_map, markers, mask=np.ones(grad_map.shape, dtype=bool))
+
+        gradient_map = grad_map
+        reconstructed = reconstruct_from_segments(img_np, segments)
+
+    elif method == 'slic':
+        segments = slic(img_np, n_segments=num_segments, compactness=10, start_label=0)
+        # For gradient map, let's do a simple Sobel on the grayscale
+        gradient_map = sobel(rgb2gray(img_np))
+        reconstructed = reconstruct_from_segments(img_np, segments)
+
+    else:
+        raise ValueError("Unknown method. Choose from ['slic', 'watershed', 'pytorch'].")
+
+    # 4) Create a "marked boundaries" image
+    #    We overlay red boundaries on top of the (resized) image
+    #    `mark_boundaries` expects the image in [0,1] or [0,255], but scikit usually
+    #    expects a floating image in [0,1], so for PyTorch (normalized) we should clamp + shift
+    #    if needed. But since we're already in [0,1] for scikit methods, it's fine.
+    #    For the PyTorch method, we used normalization for the model. 
+    #    However, `img_np` is AFTER reversing that normalization or not?
+    #
+    #    If you used ImageNet normalization for PyTorch, your img_np won't be in [0,1].
+    #    If you want the "visual" look in correct color, you can re-normalize. 
+    #    For simplicity, let's assume it's okay to just clamp it for display:
+    #
+    if method == 'pytorch':
+        # De-normalize to a typical [0,1] range for display
+        # (C, H, W) => (H, W, C)
+        mean = np.array([0.485, 0.456, 0.406])
+        std  = np.array([0.229, 0.224, 0.225])
+        # Reverse normalization
+        img_np_for_mark = (img_np * std[None, None, :]) + mean[None, None, :]
+        # clamp to [0,1]
+        img_np_for_mark = np.clip(img_np_for_mark, 0, 1)
+    else:
+        # SLIC / watershed => already [0,1]
+        img_np_for_mark = img_np
+
+    marked_image = mark_boundaries(
+        img_np_for_mark, 
+        segments, 
+        color=(1, 0, 0),  # Red boundaries
+        mode='outer'
+    )
+
+    # 5) Plot all in a 2x2 grid
+    fig, axs = plt.subplots(2, 2, figsize=(12, 12))
+
+    # Top-Left: Resized image
+    axs[0, 0].imshow(np.clip(img_np_for_mark, 0, 1))
+    axs[0, 0].set_title("Resized Image")
+    axs[0, 0].axis("off")
+
+    # Top-Right: Marked boundaries
+    axs[0, 1].imshow(marked_image)
+    axs[0, 1].set_title("Marked Boundaries")
+    axs[0, 1].axis("off")
+
+    # Bottom-Left: Reconstructed
+    axs[1, 0].imshow(reconstructed)
+    axs[1, 0].set_title("Reconstructed")
+    axs[1, 0].axis("off")
+
+    # Bottom-Right: Gradient Map
+    # If we don't have a gradient map, just disable the axis
+    if gradient_map is not None:
+        axs[1, 1].imshow(gradient_map, cmap='gray')
+        axs[1, 1].set_title("Gradient Map")
+        axs[1, 1].axis("off")
+    else:
+        axs[1, 1].axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
 def main():
     parser = argparse.ArgumentParser(
         description="Evaluate and compare superpixel segmentation methods"
@@ -181,12 +406,30 @@ def main():
         action="store_true",
         help="If set, use the BSDS500 dataset for evaluation."
     )
+    parser.add_argument(
+        "--visualize_image_path",
+        type=str,
+        default=None,
+        help="If provided, will visualize the segmentation results for this single image."
+    )
     args = parser.parse_args()
 
     if args.method == "pytorch" and args.model_path is None:
         parser.error("--model_path is required when method is 'pytorch'")
 
     device = 'cpu'#"cuda" if torch.cuda.is_available() else "cpu"
+
+    if args.visualize_image_path:
+        # For demonstration (and to ensure it doesn't break the standard evaluation)
+        visualize_segments(
+            image_path=args.visualize_image_path,
+            method=args.method,
+            model_path=args.model_path,
+            device=device,
+            img_size=args.img_size,
+            num_segments=196  # or any default number of segments you prefer
+        )
+        return  # Exit after visualization
 
     if args.use_bsds:
         if args.method == "pytorch":
