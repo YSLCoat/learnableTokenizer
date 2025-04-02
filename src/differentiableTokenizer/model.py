@@ -686,6 +686,11 @@ class SLICSegmentation(nn.Module):
             centroid_colors = new_centroid_colors
 
         return label_map
+    
+    def convert_rgb_to_lab(self, x):
+        if x.dtype == torch.uint8:
+            x = x.float() / 255.0
+        return kornia.color.rgb_to_lab(x)
 
     def forward(self, x, grad_map):
         B, C_in, H, W = x.shape
