@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 
-
+import kornia
 import timm
 import torch
 import torch.nn as nn
@@ -688,26 +688,27 @@ class SLICSegmentation(nn.Module):
         return label_map
 
     def forward(self, x, grad_map):
-        """
-        Forward pass:
-          1) Initialize centroids on a grid.
-          2) Optionally move them to local minima of grad_map.
-          3) Run SLIC-like iterative assignment and update.
-          4) Return final centroids and assignment mask.
-        """
         B, C_in, H, W = x.shape
+        # (B, 3, H, W) in RGB
+        # 1) Convert to Lab
+        x_lab = self.convert_rgb_to_lab(x)  # (B,3,H,W)
         
-        # Make sure grad_map has shape (B, 1, H, W)
+        # 2) Scale + cat gradient as extra channel
+        alpha = 5.0
+        # Make sure grad_map has shape (B,1,H,W)
         if grad_map.ndim == 3:
             grad_map = grad_map.unsqueeze(1)
+        grad_map_scaled = grad_map * alpha
         
-        # 1) Place centroids
+        x_enh = torch.cat([x_lab, grad_map_scaled], dim=1)  # (B, 4, H, W)
+
+        # 3) Place centroids
         centroids = self.place_centroids_on_grid(B)
-        
-        # 2) Move centroids to nearest local minima in grad_map
         centroids = self.find_nearest_minima(centroids, grad_map)
         
-        # 3) SLIC
-        mask = self.SLIC_vectorized(centroids, x, max_iter=50, m=20.0)
-        
+        # 4) SLIC
+        # you can reduce max_iter to 20 if 50 is too high
+        mask = self.SLIC_vectorized(centroids, x_enh, max_iter=20, m=10.0)
+
+        # 5) Return
         return centroids, mask
