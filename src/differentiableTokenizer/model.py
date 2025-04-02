@@ -696,7 +696,7 @@ class SLICSegmentation(nn.Module):
         B, C_in, H, W = x.shape
         # (B, 3, H, W) in RGB
         # 1) Convert to Lab
-        x_lab = self.convert_rgb_to_lab(x)  # (B,3,H,W)
+        #x_lab = self.convert_rgb_to_lab(x)  # (B,3,H,W)
         
         # 2) Scale + cat gradient as extra channel
         alpha = 5.0
@@ -705,7 +705,7 @@ class SLICSegmentation(nn.Module):
             grad_map = grad_map.unsqueeze(1)
         grad_map_scaled = grad_map * alpha
         
-        x_enh = torch.cat([x_lab, grad_map_scaled], dim=1)  # (B, 4, H, W)
+        x_enh = torch.cat([x, grad_map_scaled], dim=1)  # (B, 4, H, W)
 
         # 3) Place centroids
         centroids = self.place_centroids_on_grid(B)
