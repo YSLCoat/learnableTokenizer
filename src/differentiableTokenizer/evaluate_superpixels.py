@@ -274,7 +274,7 @@ def visualize_segments(
             reconstruction=True,
             embed_dim=192,
             device=device,
-            superpixel_algorithm="boundary_path_finder"
+            superpixel_algorithm="slic_segmentation"
         ).to(device)
 
         model.load_state_dict(torch.load(model_path, map_location=device))

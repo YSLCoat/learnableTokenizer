@@ -16,6 +16,8 @@ from math import sqrt
 from timm.models._manipulate import checkpoint_seq
 from torch_scatter import scatter_mean, scatter_max
 
+from collections import deque, defaultdict
+
 
 class DifferentiableSuperpixelTokenizer(nn.Module):
     def __init__(self, max_segments, n_channels=3, sobel_init=True, embed_dim=768,
@@ -622,6 +624,156 @@ class BoundaryPathFinder(nn.Module):
 
         # Return the number of segments if needed, or you can remove it
         return centroids, new_segmentation_mask
+    
+
+from collections import deque
+
+import torch
+import torch.nn.functional as F
+from collections import defaultdict, deque
+
+import numpy as np
+from skimage.measure import label
+
+def is_single_label_connected(label_map, label_val):
+    """Returns True if 'label_val' is connected in 'label_map'."""
+    mask = (label_map == label_val)
+    # label() assigns a different component ID to each connected region in `mask`.
+    # 'connectivity=1' => 4-connectivity for 2D images.
+    connected = label(mask, connectivity=1)
+    # If there's more than one connected component, then it’s not fully connected
+    # So check how many nonzero labels exist in `connected`.
+    n_components = connected.max()  # because background is labeled as 0
+    return (n_components <= 1)
+
+
+def all_labels_connected(label_map):
+    unique_labels = np.unique(label_map)
+    for lbl in unique_labels:
+        if lbl < 0: 
+            continue  # ignore negative or background flags, if present
+        if not is_single_label_connected(label_map, lbl):
+            return False
+    return True
+
+
+def is_label_map_connected(label_map: torch.Tensor) -> bool:
+    """
+    Checks if each label in 'label_map' forms exactly one connected region.
+    Uses 4-connectivity (up/down/left/right).
+
+    Args:
+        label_map (torch.Tensor): 2D tensor of shape (H, W) with integer labels.
+
+    Returns:
+        bool: True if each label has exactly one connected component; False otherwise.
+    """
+    # Convert to CPU numpy arrays if needed
+    if label_map.is_cuda:
+        label_map = label_map.cpu()
+    label_map_np = label_map.numpy()
+    
+    H, W = label_map_np.shape
+    visited = torch.zeros_like(label_map, dtype=torch.bool).numpy()
+    
+    # region_id_map: each pixel is assigned an integer region ID.
+    # Two pixels get the same region ID if and only if they share the same label
+    # and are connected (via up/down/left/right).
+    region_id_map = -1 * torch.ones_like(label_map, dtype=torch.int64).numpy()
+    
+    # Directions for 4-connectivity
+    neighbors = [(-1,0), (1,0), (0,-1), (0,1)]
+    
+    region_id = 0
+    
+    for y in range(H):
+        for x in range(W):
+            if not visited[y, x]:
+                current_label = label_map_np[y, x]
+                # BFS or DFS to find all connected pixels with the same label
+                queue = deque([(y, x)])
+                while queue:
+                    yy, xx = queue.popleft()
+                    if visited[yy, xx]:
+                        continue
+                    visited[yy, xx] = True
+                    region_id_map[yy, xx] = region_id
+
+                    # Explore neighbors
+                    for dy, dx in neighbors:
+                        ny, nx = yy + dy, xx + dx
+                        if 0 <= ny < H and 0 <= nx < W:
+                            # Same label and not visited => part of the same region
+                            if (not visited[ny, nx]) and (label_map_np[ny, nx] == current_label):
+                                queue.append((ny, nx))
+                region_id += 1
+
+    # Now 'region_id_map' holds unique region IDs for each connected component
+    # of each label. We just have to confirm that no single label is split
+    # across multiple region IDs.
+    
+    # label_to_region_ids[label] = set of region IDs that belong to that label
+    label_to_region_ids = {}
+    for y in range(H):
+        for x in range(W):
+            lbl = label_map_np[y, x]
+            rid = region_id_map[y, x]
+            if lbl not in label_to_region_ids:
+                label_to_region_ids[lbl] = set()
+            label_to_region_ids[lbl].add(rid)
+    
+    # If any label is associated with more than one region ID,
+    # it appears in more than one disconnected component
+    for lbl, rid_set in label_to_region_ids.items():
+        if len(rid_set) > 1:
+            return False
+    
+    return True
+
+
+def gpu_enforce_connectivity_multiscale(label_map, num_iterations=10):
+    """
+    Enforces connectivity heuristically by aggregating neighbor votes from multiple scales.
+    
+    Args:
+        label_map (torch.Tensor): (B, H, W) tensor of integer labels.
+        num_iterations (int): Number of iterations to run the propagation.
+    
+    Returns:
+        torch.Tensor: Updated (B, H, W) label map with improved connectivity.
+    """
+    B, H, W = label_map.shape
+    num_labels = int(label_map.max().item()) + 1
+
+    # Create one-hot encoding: shape (B, num_labels, H, W)
+    one_hot = F.one_hot(label_map, num_classes=num_labels).permute(0, 3, 1, 2).float()
+
+    # Prepare kernels for different neighborhood sizes.
+    # Each kernel is shaped (num_labels, 1, k, k) and will be applied with groups=num_labels.
+    kernels = {}
+    for ksize in [3, 5, 7]:
+        kernel = torch.ones((num_labels, 1, ksize, ksize), device=label_map.device)
+        kernels[ksize] = kernel
+
+    # Iteratively update the label map using multi-scale neighbor voting.
+    for _ in range(num_iterations):
+        # Initialize vote accumulator with zeros.
+        vote_sum = torch.zeros_like(one_hot)
+        
+        # Accumulate votes from different scales.
+        for ksize, kernel in kernels.items():
+            padding = ksize // 2
+            neighbor_votes = F.conv2d(one_hot, kernel, padding=padding, groups=num_labels)
+            vote_sum += neighbor_votes
+        
+        # Update the labels by choosing the label with the highest combined vote.
+        updated_labels = vote_sum.argmax(dim=1)
+        
+        # Refresh one_hot encoding for the next iteration.
+        one_hot = F.one_hot(updated_labels, num_classes=num_labels).permute(0, 3, 1, 2).float()
+    
+    return updated_labels
+
 
 class SLICSegmentation(nn.Module):
     def __init__(self, num_clusters=196, height=224, width=224, device='cpu'):
@@ -708,20 +860,23 @@ class SLICSegmentation(nn.Module):
         return torch.stack(updated_centroids, dim=0)
 
     def SLIC_vectorized(
-        self, centroids, x, max_iter=20, m=10.0, chunk_size=50
+        self, centroids, x, max_iter=20, m=5.0, chunk_size=50, grad_map_penalty=None, penalty_weight=1.0
     ):
         """
-        A chunked, memory-friendly version of the fully vectorized SLIC.
-
+        A chunked, memory-friendly version of the fully vectorized SLIC, with an option to penalize
+        spatial distances based on a gradient map.
+        
         Args:
-        centroids: (B, C, 2) initial centroid positions (y, x).
-        x: (B, C_in, H, W) input image or feature map.
-        max_iter: number of SLIC iterations.
-        m: weighting factor for spatial vs. color distance.
-        chunk_size: how many clusters to process per chunk (reduces memory usage).
-
+            centroids: (B, C, 2) initial centroid positions (y, x).
+            x: (B, C_in, H, W) input image or feature map.
+            max_iter: number of SLIC iterations.
+            m: weighting factor for spatial vs. color distance.
+            chunk_size: how many clusters to process per chunk.
+            grad_map_penalty: (B, 1, H, W) tensor containing per-pixel gradient values to penalize spatial distances.
+            penalty_weight: multiplier for the gradient penalty.
+            
         Returns:
-        label_map: (B, H, W) cluster assignments
+            label_map: (B, H, W) cluster assignments.
         """
         device = x.device
         B, C_in, H, W = x.shape
@@ -729,7 +884,7 @@ class SLICSegmentation(nn.Module):
 
         # Approximate cluster spacing
         S = math.sqrt(H * W / C)
-        # We'll use squared distance for efficiency
+        # Squared spatial weighting factor
         m_s_sq = (m / S) ** 2
 
         # Round & clamp initial centroid positions
@@ -744,79 +899,64 @@ class SLICSegmentation(nn.Module):
                 xx = xc[b_idx, c_idx]
                 centroid_colors[b_idx, c_idx] = x[b_idx, :, yy, xx]
 
-        # Precompute coordinate grid for entire image
-        # (H, W) => broadcast to (1,1,H,W)
+        # Precompute coordinate grid for entire image: shape (1,1,H,W)
         Y = torch.arange(H, device=device).view(1, 1, H, 1)
         X = torch.arange(W, device=device).view(1, 1, 1, W)
 
-        # We'll keep label_map/distance_map for the entire image
+        # Label map and distance map
         label_map = torch.full((B, H, W), -1, device=device, dtype=torch.long)
         distance_map = torch.full((B, H, W), float('inf'), device=device)
 
         for _iter in range(max_iter):
-            # --- Assignment step (chunked) ---
-            # Reset the distance map to "infinity" for this iteration
             distance_map.fill_(float('inf'))
             label_map.fill_(-1)
 
-            # We'll chunk over the C dimension
             start = 0
             while start < C:
                 end = min(start + chunk_size, C)
 
-                # Extract the relevant chunk
-                yc_chunk = yc[:, start:end]           # shape (B, chunk_size)
+                # Extract chunk of centroids/colors
+                yc_chunk = yc[:, start:end]  # (B, chunk_size)
                 xc_chunk = xc[:, start:end]
                 ccol_chunk = centroid_colors[:, start:end]  # (B, chunk_size, C_in)
 
-                # Expand them for distance computations
-                # color => (B, chunk_size, C_in, 1, 1)
-                ccol_chunk_exp = ccol_chunk.unsqueeze(-1).unsqueeze(-1)
+                # Expand for distance computations
+                ccol_chunk_exp = ccol_chunk.unsqueeze(-1).unsqueeze(-1)  # (B, chunk_size, C_in, 1, 1)
+                x_exp = x.unsqueeze(1)  # (B, 1, C_in, H, W)
 
-                # x => (B, 1, C_in, H, W)
-                x_exp = x.unsqueeze(1)  # doesn't expand chunk_size yet
-
-                # color_dist_sq => (B, chunk_size, H, W)
+                # Color distance squared: (B, chunk_size, H, W)
                 color_dist_sq = (x_exp - ccol_chunk_exp).pow(2).sum(dim=2)
 
-                # spatial => (B, chunk_size, H, W)
-                yc_chunk_exp = yc_chunk.view(B, -1, 1, 1)  # (B, chunk_size, 1, 1)
+                # Spatial distances: (B, chunk_size, H, W)
+                yc_chunk_exp = yc_chunk.view(B, -1, 1, 1)
                 xc_chunk_exp = xc_chunk.view(B, -1, 1, 1)
-
                 spatial_dist_sq = (Y - yc_chunk_exp).pow(2) + (X - xc_chunk_exp).pow(2)
 
+                # If a gradient penalty is provided, adjust the spatial term.
+                if grad_map_penalty is not None:
+                    # grad_map_penalty is expected to be (B, 1, H, W) and is broadcast along the cluster dimension.
+                    spatial_dist_sq = spatial_dist_sq * (1 + penalty_weight * grad_map_penalty)
+
+                # Total distance
                 dist_sq = color_dist_sq + m_s_sq * spatial_dist_sq
 
-                # Compare with the global distance map
-                #  - distance_map: (B, H, W)
-                #  - dist_sq:      (B, chunk_size, H, W)
-                # We want to see if dist_sq < distance_map for each pixel
-                # For that, we need a broadcast along chunk_size dimension.
-
-                # We'll do an elementwise comparison for each cluster in this chunk.
-                # A straightforward way: loop over chunk dimension in *PyTorch* (still GPU vector),
-                # or do a gather-based approach.
-
-                # We'll do a quick approach: for each cluster idx in [start..end-1],
-                # compare slice with distance_map and update as needed.
-                # This is still vectorized over (B,H,W), but it's a small loop over chunk_size.
+                # Update distance_map and label_map for this chunk
                 for i, c_id in enumerate(range(start, end)):
-                    d_sq = dist_sq[:, i]  # shape (B,H,W)
+                    d_sq = dist_sq[:, i]  # (B, H, W)
                     mask = d_sq < distance_map
                     distance_map[mask] = d_sq[mask]
                     label_map[mask] = c_id
 
                 start = end
 
-            # --- Update centroid positions/colors ---
-            # We'll do the same approach as in the fully-vectorized code:
+            # --- Update centroids ---
             new_yc = yc.clone()
             new_xc = xc.clone()
             new_centroid_colors = centroid_colors.clone()
 
             for b_idx in range(B):
                 labels_b = label_map[b_idx].view(-1)        # (H*W,)
-                color_b = x[b_idx].view(C_in, -1)           # (C_in, H*W)
+                color_b = x[b_idx].view(C_in, -1)            # (C_in, H*W)
                 y_coords = torch.arange(H, device=device).unsqueeze(1).expand(H, W).reshape(-1)
                 x_coords = torch.arange(W, device=device).unsqueeze(0).expand(H, W).reshape(-1)
 
@@ -825,38 +965,30 @@ class SLICSegmentation(nn.Module):
                 count = torch.zeros(C, device=device, dtype=torch.float)
                 sum_color = torch.zeros(C, C_in, device=device, dtype=torch.float)
 
-                # index_add_ to accumulate sums
                 sum_y.index_add_(0, labels_b, y_coords.float())
                 sum_x.index_add_(0, labels_b, x_coords.float())
                 count.index_add_(0, labels_b, torch.ones_like(labels_b, dtype=torch.float))
 
-                # color_b => (C_in, H*W). We'll transpose for index_add
                 color_b_t = color_b.t()  # (H*W, C_in)
                 for c_in_idx in range(C_in):
-                    sum_color[:, c_in_idx].index_add_(
-                        0, labels_b, color_b_t[:, c_in_idx]
-                    )
+                    sum_color[:, c_in_idx].index_add_(0, labels_b, color_b_t[:, c_in_idx])
 
-                # Now compute new means
                 nonzero_mask = (count > 0)
                 new_y = (sum_y[nonzero_mask] / count[nonzero_mask]).round().long().clamp(0, H - 1)
                 new_x = (sum_x[nonzero_mask] / count[nonzero_mask]).round().long().clamp(0, W - 1)
                 new_colors = sum_color[nonzero_mask] / count[nonzero_mask].unsqueeze(-1)
 
-                # Put them back
                 nonzero_ids = torch.nonzero(nonzero_mask, as_tuple=True)[0]
                 new_yc[b_idx, nonzero_ids] = new_y
                 new_xc[b_idx, nonzero_ids] = new_x
                 new_centroid_colors[b_idx, nonzero_ids] = new_colors
 
-                # For empty clusters, keep old positions & colors
                 empty_ids = torch.nonzero(~nonzero_mask, as_tuple=True)[0]
                 if len(empty_ids) > 0:
                     new_yc[b_idx, empty_ids] = yc[b_idx, empty_ids]
                     new_xc[b_idx, empty_ids] = xc[b_idx, empty_ids]
                     new_centroid_colors[b_idx, empty_ids] = centroid_colors[b_idx, empty_ids]
 
-            # Save for next iteration
             yc = new_yc
             xc = new_xc
             centroid_colors = new_centroid_colors
@@ -870,26 +1002,23 @@ class SLICSegmentation(nn.Module):
 
     def forward(self, x, grad_map):
         B, C_in, H, W = x.shape
-        # (B, 3, H, W) in RGB
-        # 1) Convert to Lab
-        # x_lab = self.convert_rgb_to_lab(x)  # (B,3,H,W)
+        x_lab = self.convert_rgb_to_lab(x)  # (B, 3, H, W)
         
-        # 2) Scale + cat gradient as extra channel
-        alpha = 5.0
-        # Make sure grad_map has shape (B,1,H,W)
+        # Ensure grad_map is (B, 1, H, W) and scale if necessary.
         if grad_map.ndim == 3:
             grad_map = grad_map.unsqueeze(1)
-        grad_map_scaled = grad_map * alpha
+        alpha = 5.0
+        grad_map_scaled = grad_map * alpha  # For centroid placement and visualization.
         
-        #x_enh = torch.cat([x_lab, grad_map_scaled], dim=1)  # (B, 4, H, W)
-
-        # 3) Place centroids
+        # For modifying the distance metric, we use just x_lab.
         centroids = self.place_centroids_on_grid(B)
         centroids = self.find_nearest_minima(centroids, grad_map)
         
-        # 4) SLIC
-        # you can reduce max_iter to 20 if 50 is too high
-        mask = self.SLIC_vectorized(centroids, x, max_iter=20, m=10.0)
-
-        # 5) Return
+        # Set penalty_weight to control the influence of high gradients.
+        penalty_weight = 1.0  # Experiment with this value.
+        
+        mask = self.SLIC_vectorized(centroids, x_lab, max_iter=20, m=10.0,
+                                    grad_map_penalty=grad_map, penalty_weight=penalty_weight)
+        mask = gpu_enforce_connectivity_multiscale(mask)
+        
         return centroids, mask
