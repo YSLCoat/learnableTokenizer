@@ -1,0 +1,63 @@
+Starting job 1490492 on gpu-11 on fox at Thu Apr 3 15:18:44 CEST 2025
+
+Number of available GPUs: 4
+GPU 0: NVIDIA GeForce RTX 3090
+GPU 1: NVIDIA GeForce RTX 3090
+GPU 2: NVIDIA GeForce RTX 3090
+GPU 3: NVIDIA GeForce RTX 3090
+[W socket.cpp:426] [c10d] The server socket has failed to bind to [::]:12355 (errno: 98 - Address already in use).
+[W socket.cpp:426] [c10d] The server socket has failed to bind to 0.0.0.0:12355 (errno: 98 - Address already in use).
+[E socket.cpp:462] [c10d] The server socket has failed to listen on any local network address.
+Traceback (most recent call last):
+  File "/cluster/software/EL9/easybuild/software/Python/3.10.8-GCCcore-12.2.0/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/cluster/software/EL9/easybuild/software/Python/3.10.8-GCCcore-12.2.0/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/differentiableTokenizer/train.py", line 62, in <module>
+    mp.spawn(main, args=(world_size, sys.argv[1:]), nprocs=world_size)
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 239, in spawn
+    return start_processes(fn, args, nprocs, join, daemon, start_method='spawn')
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 197, in start_processes
+    while not context.join():
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 160, in join
+    raise ProcessRaisedException(msg, error_index, failed_process.pid)
+torch.multiprocessing.spawn.ProcessRaisedException: 
+
+-- Process 1 terminated with the following error:
+Traceback (most recent call last):
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 69, in _wrap
+    fn(i, *args)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/differentiableTokenizer/train.py", line 17, in main
+    ddp_setup(rank, world_size)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/train_utils.py", line 30, in ddp_setup
+    init_process_group(backend="gloo", rank=rank, world_size=world_size)
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py", line 907, in init_process_group
+    default_pg = _new_process_group_helper(
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py", line 1009, in _new_process_group_helper
+    backend_class = ProcessGroupGloo(backend_prefix_store, group_rank, group_size, timeout=timeout)
+RuntimeError: [../third_party/gloo/gloo/transport/tcp/pair.cc:799] connect [10.110.0.81]:21936: Connection refused
+
+
+Job 1490492 consumed 0.8 billing hours from project ec232.
+
+Submitted 2025-04-03T14:48:56; waited 29.8 minutes in the queue after becoming eligible to run.
+
+Requested wallclock time: 2.0 days
+Elapsed wallclock time:   43.0 seconds
+
+Job failed.
+
+Task and CPU statistics:
+ID             CPUs  Tasks  CPU util                Start  Elapsed  Exit status
+1490492           4            0.0 %  2025-04-03T15:18:43   43.0 s  1
+1490492.batch     4      1    16.7 %  2025-04-03T15:18:43   43.0 s  1
+
+Used CPU time:   28.7 CPU seconds
+Unused CPU time: 2.4 CPU minutes
+
+Memory statistics, in GiB:
+ID              Alloc   Usage
+1490492         100.0        
+1490492.batch   100.0     0.5
+
+Job 1490492 completed at Thu Apr 3 15:19:26 CEST 2025
