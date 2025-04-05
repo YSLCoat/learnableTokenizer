@@ -24,7 +24,7 @@ def main(rank, world_size, args):
     ddp_setup(rank, world_size)
 
     model = DifferentiableSuperpixelTokenizerViT(
-        args.model_name, args.n_segments, args.n_classes, args.n_channels, args.superpixel_algorithm
+        args.model_name, args.n_segments, args.n_classes, args.n_channels, args.superpixel_algorithm, args.pretrained
     )
 
     if rank == 0:
@@ -34,8 +34,6 @@ def main(rank, world_size, args):
             depth=4
         )
 
-    # We will rely on timm's create_optimizer_v2 for layer-wise LR decay, AdamW, etc.
-    # 'layer_decay=0.65' is a common choice for large ViTs; adjust as needed.
     optimizer = create_optimizer_v2(
         model,
         opt='adamw',
@@ -55,54 +53,27 @@ def main(rank, world_size, args):
         or (hasattr(args, "cutmix_minmax") and args.cutmix_minmax is not None)
     )
     mixup_fn = None
-    if mixup_active:
-        mixup_fn = Mixup(
-            mixup_alpha=args.mixup,
-            cutmix_alpha=args.cutmix,
-            cutmix_minmax=args.cutmix_minmax,
-            prob=args.mixup_prob,
-            switch_prob=args.mixup_switch_prob,
-            mode=args.mixup_mode,
-            label_smoothing=args.smoothing,
-            num_classes=args.n_classes  # or args.nb_classes if you prefer
-        )
+    # if mixup_active:
+    #     mixup_fn = Mixup(
+    #         mixup_alpha=args.mixup,
+    #         cutmix_alpha=args.cutmix,
+    #         cutmix_minmax=args.cutmix_minmax,
+    #         prob=args.mixup_prob,
+    #         switch_prob=args.mixup_switch_prob,
+    #         mode=args.mixup_mode,
+    #         label_smoothing=args.smoothing,
+    #         num_classes=args.n_classes  # or args.nb_classes if you prefer
+    #     )
 
     # If using mixup, we generally use SoftTargetCrossEntropy to handle soft labels
     if mixup_active:
-        loss_function = SoftTargetCrossEntropy()
+        pass
+        # loss_function = SoftTargetCrossEntropy()
     else:
         label_smoothing = getattr(args, "label_smoothing", 0.0)
         loss_function = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
 
-    # -------------------------------------------------------------------------
-    # (Optional) Scheduler
-    # -------------------------------------------------------------------------
-    # If you'd like a warmup + cosine schedule, we can create it via timm's create_scheduler
-    # Example: timm passes a 'steps_per_epoch' argument to properly do step-based scheduling
-    # 'decay_epochs' -> when to end the cycle, 'warmup_epochs' -> # of warmup epochs, etc.
-    #
-    # Additional references:
-    #   - timm.scheduler.CosineLRScheduler
-    #   - timm.scheduler.create_scheduler
-    #
-    # We'll do a quick example here:
-    #
-    steps_per_epoch = len(train_dataloader)
     scheduler, _ = create_scheduler(args, optimizer)
-    # create_scheduler expects that you have certain attributes in args, like:
-    #   args.sched, args.epochs, args.decay_epochs, args.warmup_epochs,
-    #   args.cooldown_epochs, etc. 
-    # Example:
-    #   args.sched = 'cosine'
-    #   args.epochs = 100
-    #   args.decay_epochs = 100
-    #   args.warmup_epochs = 5
-    # If you do not have these, you'll need to specify them or default them in parse_input_args.
-
-    # Alternatively, if you prefer a simpler approach:
-    # from torch.optim.lr_scheduler import CosineAnnealingLR
-    # scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
-
 
     trainer = Trainer(
         args=args,
@@ -114,8 +85,7 @@ def main(rank, world_size, args):
         gpu_id=rank,
         save_every=args.save_every,
         mixup_function=mixup_fn,
-        # If your Trainer constructor takes scheduler, pass it here, e.g.:
-        # scheduler=scheduler
+        scheduler=scheduler
     )
 
     trainer.train(args.epochs)

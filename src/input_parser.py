@@ -29,29 +29,36 @@ def parse_input_args(input_args):
         default=r"IN1k", 
         help="Name of the data folder"
     )
+    # Set base_lr to something typical for finetuning, e.g., 2.5e-5
     parser.add_argument(
-        "--lr_start",
-        default=1e-6, 
+        "--base_lr",
+        default=2.5e-5, 
         type=float, 
-        help="Learning rate at start of scheduling"
+        help="Base learning rate for the scheduler (start LR)"
     )
+
+    # A min LR that the schedule can decay to, e.g., 1e-6
     parser.add_argument(
         "--lr_stop",
-        default=1e-5, 
+        default=1e-6, 
         type=float, 
-        help="Learning rate at end of scheduling"
+        help="Learning rate at end of scheduling / min LR in a cosine schedule"
     )
+
+    # A nominal LR if needed by certain schedulers; sometimes used as peak LR or fallback
     parser.add_argument(
         "--lr",
         default=1e-3, 
         type=float, 
-        help="Learning rate"
+        help="Learning rate (if scheduler doesn't override base_lr)"
     )
+
+    # Warmup ratio is still provided if used by certain timm schedulers
     parser.add_argument(
         "--lr_scheduler_warmup",
         default=0.05, 
         type=float, 
-        help="Warmup ratio for scheduler"
+        help="Warmup ratio for the scheduler, if supported by timm"
     )
     parser.add_argument(
         "--beta_1", 
@@ -85,7 +92,7 @@ def parse_input_args(input_args):
     )
     parser.add_argument(
         "--save_every", 
-        default=20, 
+        default=1, 
         type=int, 
         help="Save model checkpoint every n epochs"
     )
@@ -139,7 +146,7 @@ def parse_input_args(input_args):
     parser.add_argument(
         "--model_save_path",
         help="Path to save model",
-        default="trained_model.pt",
+        default="trained_vit_model.pt",
     )
     parser.add_argument(
         "--pretrained_model_path",
@@ -149,6 +156,11 @@ def parse_input_args(input_args):
         "--train_from_checkpoint", 
         action="store_true", 
         help="Load model from checkpoint and continue training"
+    )
+    parser.add_argument(
+        "--pretrained", 
+        action="store_true", 
+        help="Load pretrained vit from timm"
     )
     parser.add_argument(
         '--reproducibility_statement_file',
@@ -205,6 +217,9 @@ def parse_input_args(input_args):
         type=int,
         help="Number of classes for mixup augmentation."
     )
+    parser.add_argument("--sched", default="cosine", type=str, help="Scheduler type")
+    parser.add_argument("--warmup_epochs", default=5, type=int, help="Number of warmup epochs")
+    parser.add_argument("--decay_epochs", default=500, type=int, help="Number of decay epochs")
 
     # If reproducibility_statement_file is provided, load the args from the file
     if args.reproducibility_statement_file is not None:

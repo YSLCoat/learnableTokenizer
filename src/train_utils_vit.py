@@ -70,7 +70,7 @@ class Trainer:
         self.loss_function = loss_function
         self.save_every = save_every
         self.mixup_augmentation = mixup_function
-        # self.scheduler = scheduler  # uncomment if using a scheduler
+        self.scheduler = scheduler  # uncomment if using a scheduler
         self.verbose_training = True
 
         # Load from a checkpoint if specified
@@ -218,8 +218,8 @@ class Trainer:
         val_ev = val_ev_total / num_val_batches
         val_acc = val_correct / val_total
 
-        # if self.scheduler is not None:
-        #     self.scheduler.step()
+        if self.scheduler is not None:
+            self.scheduler.step()
 
         print(
             f"Epoch: {epoch+1} | "
@@ -292,8 +292,8 @@ def prepare_datasets(args):
 
     postprocess_train = (
         transforms.Compose([
-            transforms.Resize((args.img_size, args.img_size)),
-            # rand_augment,  # Uncomment to enable RandAugment
+            transforms.RandomResizedCrop(args.img_size),  # random crop + resize
+            transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize(
                 mean=(0.485, 0.456, 0.406),
