@@ -30,7 +30,7 @@ def ddp_setup(rank, world_size):
     """
     os.environ["MASTER_ADDR"] = "localhost"
     # pick any free port, e.g. "12400"
-    os.environ["MASTER_PORT"] = "12400"
+    os.environ["MASTER_PORT"] = "12401"
     init_process_group(backend="nccl", rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
 
