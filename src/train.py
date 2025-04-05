@@ -70,8 +70,9 @@ def main(rank, world_size, args):
         pass
         # loss_function = SoftTargetCrossEntropy()
     else:
-        label_smoothing = getattr(args, "label_smoothing", 0.0)
-        loss_function = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+        pass
+    label_smoothing = getattr(args, "label_smoothing", 0.0)
+    loss_function = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
 
     scheduler, _ = create_scheduler(args, optimizer)
 
