@@ -9,7 +9,7 @@ from differentiableTokenizer.model import VoronoiPropagation, BoundaryPathFinder
 from torch_scatter import scatter_mean, scatter_max
 
 class DifferentiableSuperpixelTokenizer(nn.Module):
-    def __init__(self, max_segments, n_channels=3, sobel_init=True, embed_dim=768,
+    def __init__(self, max_segments, n_channels=3, sobel_init=False, embed_dim=768,
                  use_positional_embeddings=True, reconstruction=False, device='cuda', superpixel_algorithm=None):
         """
         Args:

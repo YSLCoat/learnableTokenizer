@@ -1018,7 +1018,7 @@ class SLICSegmentation(nn.Module):
         penalty_weight = 1.0  # Experiment with this value.
         
         mask = self.SLIC_vectorized(centroids, x_lab, max_iter=20, m=10.0,
-                                    grad_map_penalty=grad_map, penalty_weight=penalty_weight)
+                                    grad_map_penalty=None, penalty_weight=penalty_weight)
         mask = gpu_enforce_connectivity_multiscale(mask)
         
         return centroids, mask
