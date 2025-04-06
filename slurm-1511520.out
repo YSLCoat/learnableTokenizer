@@ -1,0 +1,222 @@
+Starting job 1511520 on gpu-6 on fox at Sun Apr 6 11:50:19 CEST 2025
+
+Number of available GPUs: 4
+GPU 0: NVIDIA GeForce RTX 3090
+GPU 1: NVIDIA GeForce RTX 3090
+GPU 2: NVIDIA GeForce RTX 3090
+GPU 3: NVIDIA GeForce RTX 3090
+INFO:torch.distributed.distributed_c10d:Added key: store_based_barrier_key:1 to store for rank: 3
+INFO:torch.distributed.distributed_c10d:Added key: store_based_barrier_key:1 to store for rank: 0
+INFO:torch.distributed.distributed_c10d:Added key: store_based_barrier_key:1 to store for rank: 2
+INFO:torch.distributed.distributed_c10d:Added key: store_based_barrier_key:1 to store for rank: 1
+INFO:torch.distributed.distributed_c10d:Rank 3: Completed store-based barrier for key:store_based_barrier_key:1 with 4 nodes.
+INFO:torch.distributed.distributed_c10d:Rank 0: Completed store-based barrier for key:store_based_barrier_key:1 with 4 nodes.
+INFO:torch.distributed.distributed_c10d:Rank 2: Completed store-based barrier for key:store_based_barrier_key:1 with 4 nodes.
+INFO:torch.distributed.distributed_c10d:Rank 1: Completed store-based barrier for key:store_based_barrier_key:1 with 4 nodes.
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torchvision/transforms/v2/_deprecated.py:41: UserWarning: The transform `ToTensor()` is deprecated and will be removed in a future release. Instead, please use `transforms.Compose([transforms.ToImageTensor(), transforms.ConvertImageDtype()])`.
+  warnings.warn(
+====================================================================================================
+Layer (type:depth-idx)                             Output Shape              Param #
+====================================================================================================
+DifferentiableSuperpixelTokenizerViT               [64, 1000]                192
+├─VisionTransformer: 1-1                           --                        192
+│    └─DifferentiableSuperpixelTokenizer: 2-1      [64, 196, 192]            --
+│    │    └─Sequential: 3-1                        [64, 192, 224, 224]       --
+│    │    │    └─Conv2d: 4-1                       [64, 64, 224, 224]        1,792
+│    │    │    └─BatchNorm2d: 4-2                  [64, 64, 224, 224]        128
+│    │    │    └─ReLU: 4-3                         [64, 64, 224, 224]        --
+│    │    │    └─Conv2d: 4-4                       [64, 192, 224, 224]       110,784
+│    │    │    └─BatchNorm2d: 4-5                  [64, 192, 224, 224]       384
+│    │    │    └─ReLU: 4-6                         [64, 192, 224, 224]       --
+│    │    └─Conv2d: 3-2                            [64, 2, 224, 224]         18
+│    │    └─VoronoiPropagation: 3-3                [64, 196, 2]              --
+│    │    └─Linear: 3-4                            [64, 196, 192]            73,920
+│    │    └─Linear: 3-5                            [64, 196, 192]            576
+│    └─Dropout: 2-2                                [64, 197, 192]            --
+│    └─Identity: 2-3                               [64, 197, 192]            --
+│    └─Sequential: 2-4                             [64, 197, 192]            --
+│    │    └─Block: 3-6                             [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-7                    [64, 197, 192]            384
+│    │    │    └─Attention: 4-8                    [64, 197, 192]            148,224
+│    │    │    └─Identity: 4-9                     [64, 197, 192]            --
+│    │    │    └─Identity: 4-10                    [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-11                   [64, 197, 192]            384
+│    │    │    └─Mlp: 4-12                         [64, 197, 192]            295,872
+│    │    │    └─Identity: 4-13                    [64, 197, 192]            --
+│    │    │    └─Identity: 4-14                    [64, 197, 192]            --
+│    │    └─Block: 3-7                             [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-15                   [64, 197, 192]            384
+│    │    │    └─Attention: 4-16                   [64, 197, 192]            148,224
+│    │    │    └─Identity: 4-17                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-18                    [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-19                   [64, 197, 192]            384
+│    │    │    └─Mlp: 4-20                         [64, 197, 192]            295,872
+│    │    │    └─Identity: 4-21                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-22                    [64, 197, 192]            --
+│    │    └─Block: 3-8                             [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-23                   [64, 197, 192]            384
+│    │    │    └─Attention: 4-24                   [64, 197, 192]            148,224
+│    │    │    └─Identity: 4-25                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-26                    [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-27                   [64, 197, 192]            384
+│    │    │    └─Mlp: 4-28                         [64, 197, 192]            295,872
+│    │    │    └─Identity: 4-29                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-30                    [64, 197, 192]            --
+│    │    └─Block: 3-9                             [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-31                   [64, 197, 192]            384
+│    │    │    └─Attention: 4-32                   [64, 197, 192]            148,224
+│    │    │    └─Identity: 4-33                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-34                    [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-35                   [64, 197, 192]            384
+│    │    │    └─Mlp: 4-36                         [64, 197, 192]            295,872
+│    │    │    └─Identity: 4-37                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-38                    [64, 197, 192]            --
+│    │    └─Block: 3-10                            [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-39                   [64, 197, 192]            384
+│    │    │    └─Attention: 4-40                   [64, 197, 192]            148,224
+│    │    │    └─Identity: 4-41                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-42                    [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-43                   [64, 197, 192]            384
+│    │    │    └─Mlp: 4-44                         [64, 197, 192]            295,872
+│    │    │    └─Identity: 4-45                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-46                    [64, 197, 192]            --
+│    │    └─Block: 3-11                            [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-47                   [64, 197, 192]            384
+│    │    │    └─Attention: 4-48                   [64, 197, 192]            148,224
+│    │    │    └─Identity: 4-49                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-50                    [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-51                   [64, 197, 192]            384
+│    │    │    └─Mlp: 4-52                         [64, 197, 192]            295,872
+│    │    │    └─Identity: 4-53                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-54                    [64, 197, 192]            --
+│    │    └─Block: 3-12                            [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-55                   [64, 197, 192]            384
+│    │    │    └─Attention: 4-56                   [64, 197, 192]            148,224
+│    │    │    └─Identity: 4-57                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-58                    [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-59                   [64, 197, 192]            384
+│    │    │    └─Mlp: 4-60                         [64, 197, 192]            295,872
+│    │    │    └─Identity: 4-61                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-62                    [64, 197, 192]            --
+│    │    └─Block: 3-13                            [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-63                   [64, 197, 192]            384
+│    │    │    └─Attention: 4-64                   [64, 197, 192]            148,224
+│    │    │    └─Identity: 4-65                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-66                    [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-67                   [64, 197, 192]            384
+│    │    │    └─Mlp: 4-68                         [64, 197, 192]            295,872
+│    │    │    └─Identity: 4-69                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-70                    [64, 197, 192]            --
+│    │    └─Block: 3-14                            [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-71                   [64, 197, 192]            384
+│    │    │    └─Attention: 4-72                   [64, 197, 192]            148,224
+│    │    │    └─Identity: 4-73                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-74                    [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-75                   [64, 197, 192]            384
+│    │    │    └─Mlp: 4-76                         [64, 197, 192]            295,872
+│    │    │    └─Identity: 4-77                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-78                    [64, 197, 192]            --
+│    │    └─Block: 3-15                            [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-79                   [64, 197, 192]            384
+│    │    │    └─Attention: 4-80                   [64, 197, 192]            148,224
+│    │    │    └─Identity: 4-81                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-82                    [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-83                   [64, 197, 192]            384
+│    │    │    └─Mlp: 4-84                         [64, 197, 192]            295,872
+│    │    │    └─Identity: 4-85                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-86                    [64, 197, 192]            --
+│    │    └─Block: 3-16                            [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-87                   [64, 197, 192]            384
+│    │    │    └─Attention: 4-88                   [64, 197, 192]            148,224
+│    │    │    └─Identity: 4-89                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-90                    [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-91                   [64, 197, 192]            384
+│    │    │    └─Mlp: 4-92                         [64, 197, 192]            295,872
+│    │    │    └─Identity: 4-93                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-94                    [64, 197, 192]            --
+│    │    └─Block: 3-17                            [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-95                   [64, 197, 192]            384
+│    │    │    └─Attention: 4-96                   [64, 197, 192]            148,224
+│    │    │    └─Identity: 4-97                    [64, 197, 192]            --
+│    │    │    └─DropPath: 4-98                    [64, 197, 192]            --
+│    │    │    └─LayerNorm: 4-99                   [64, 197, 192]            384
+│    │    │    └─Mlp: 4-100                        [64, 197, 192]            295,872
+│    │    │    └─Identity: 4-101                   [64, 197, 192]            --
+│    │    │    └─DropPath: 4-102                   [64, 197, 192]            --
+│    └─LayerNorm: 2-5                              [64, 197, 192]            384
+│    └─Identity: 2-6                               [64, 192]                 --
+│    └─Dropout: 2-7                                [64, 192]                 --
+│    └─Linear: 2-8                                 [64, 1000]                193,000
+====================================================================================================
+Total params: 5,719,738
+Trainable params: 5,719,738
+Non-trainable params: 0
+Total mult-adds (G): 361.93
+====================================================================================================
+Input size (MB): 38.54
+Forward/backward pass size (MB): 15819.43
+Params size (MB): 22.88
+Estimated Total Size (MB): 15880.84
+====================================================================================================
+Train Epoch 1:   0%|          | 0/5005 [00:00<?, ?it/s]Train Epoch 1:   0%|          | 0/5005 [00:00<?, ?it/s]Train Epoch 1:   0%|          | 0/5005 [00:00<?, ?it/s]Train Epoch 1:   0%|          | 0/5005 [00:00<?, ?it/s]Train Epoch 1:   0%|          | 1/5005 [00:41<57:41:44, 41.51s/it]Train Epoch 1:   0%|          | 1/5005 [00:41<57:42:54, 41.52s/it]Train Epoch 1:   0%|          | 1/5005 [00:42<58:58:30, 42.43s/it]INFO:torch.nn.parallel.distributed:Reducer buckets have been rebuilt in this iteration.
+INFO:torch.nn.parallel.distributed:Reducer buckets have been rebuilt in this iteration.
+INFO:torch.nn.parallel.distributed:Reducer buckets have been rebuilt in this iteration.
+Train Epoch 1:   0%|          | 1/5005 [00:42<59:03:02, 42.48s/it]INFO:torch.nn.parallel.distributed:Reducer buckets have been rebuilt in this iteration.
+Train Epoch 1:   0%|          | 2/5005 [00:51<31:21:33, 22.57s/it]Train Epoch 1:   0%|          | 2/5005 [00:51<31:39:04, 22.78s/it]Train Epoch 1:   0%|          | 2/5005 [00:52<32:36:41, 23.47s/it]Train Epoch 1:   0%|          | 2/5005 [00:52<32:56:21, 23.70s/it]Train Epoch 1:   0%|          | 3/5005 [01:01<23:07:47, 16.65s/it]Train Epoch 1:   0%|          | 3/5005 [01:01<23:20:30, 16.80s/it]Train Epoch 1:   0%|          | 3/5005 [01:01<23:05:33, 16.62s/it]Train Epoch 1:   0%|          | 3/5005 [01:01<23:31:03, 16.93s/it]Train Epoch 1:   0%|          | 4/5005 [01:09<18:42:24, 13.47s/it]Train Epoch 1:   0%|          | 4/5005 [01:09<18:51:17, 13.57s/it]Train Epoch 1:   0%|          | 4/5005 [01:09<18:41:20, 13.45s/it]Train Epoch 1:   0%|          | 4/5005 [01:09<18:56:27, 13.63s/it]Train Epoch 1:   0%|          | 5/5005 [01:18<16:13:25, 11.68s/it]Train Epoch 1:   0%|          | 5/5005 [01:18<16:19:36, 11.76s/it]Train Epoch 1:   0%|          | 5/5005 [01:19<17:05:50, 12.31s/it]Train Epoch 1:   0%|          | 5/5005 [01:19<16:57:51, 12.21s/it]Train Epoch 1:   0%|          | 6/5005 [01:28<15:26:07, 11.12s/it]Train Epoch 1:   0%|          | 6/5005 [01:28<15:30:02, 11.16s/it]Train Epoch 1:   0%|          | 6/5005 [01:28<15:19:46, 11.04s/it]Train Epoch 1:   0%|          | 6/5005 [01:28<15:16:10, 11.00s/it]Train Epoch 1:   0%|          | 7/5005 [01:36<14:17:51, 10.30s/it]Train Epoch 1:   0%|          | 7/5005 [01:36<14:19:05, 10.31s/it]Train Epoch 1:   0%|          | 7/5005 [01:36<14:13:18, 10.24s/it]Train Epoch 1:   0%|          | 7/5005 [01:36<14:11:26, 10.22s/it]Train Epoch 1:   0%|          | 8/5005 [01:45<13:33:13,  9.76s/it]Train Epoch 1:   0%|          | 8/5005 [01:45<13:34:25,  9.78s/it]Train Epoch 1:   0%|          | 8/5005 [01:45<13:30:20,  9.73s/it]Train Epoch 1:   0%|          | 8/5005 [01:45<13:28:16,  9.71s/it]Train Epoch 1:   0%|          | 9/5005 [01:54<13:04:18,  9.42s/it]Train Epoch 1:   0%|          | 9/5005 [01:54<13:04:59,  9.43s/it]Train Epoch 1:   0%|          | 9/5005 [01:54<13:02:45,  9.40s/it]Train Epoch 1:   0%|          | 9/5005 [01:54<13:00:42,  9.38s/it]Train Epoch 1:   0%|          | 10/5005 [02:02<12:48:10,  9.23s/it]Train Epoch 1:   0%|          | 10/5005 [02:02<12:48:16,  9.23s/it]Train Epoch 1:   0%|          | 10/5005 [02:02<12:46:44,  9.21s/it]Train Epoch 1:   0%|          | 10/5005 [02:03<12:46:26,  9.21s/it]Train Epoch 1:   0%|          | 11/5005 [02:11<12:34:44,  9.07s/it]Train Epoch 1:   0%|          | 11/5005 [02:11<12:35:24,  9.08s/it]Train Epoch 1:   0%|          | 11/5005 [02:11<12:34:20,  9.06s/it]Train Epoch 1:   0%|          | 11/5005 [02:11<12:33:03,  9.05s/it]Train Epoch 1:   0%|          | 12/5005 [02:20<12:33:11,  9.05s/it]Train Epoch 1:   0%|          | 12/5005 [02:20<12:32:13,  9.04s/it]Train Epoch 1:   0%|          | 12/5005 [02:23<13:38:47,  9.84s/it]Train Epoch 1:   0%|          | 12/5005 [02:23<13:35:06,  9.80s/it]Train Epoch 1:   0%|          | 13/5005 [02:31<13:32:58,  9.77s/it]Train Epoch 1:   0%|          | 13/5005 [02:31<13:13:14,  9.53s/it]Train Epoch 1:   0%|          | 13/5005 [02:32<13:13:45,  9.54s/it]Train Epoch 1:   0%|          | 13/5005 [02:32<13:31:43,  9.76s/it]Train Epoch 1:   0%|          | 14/5005 [02:40<13:05:52,  9.45s/it]Train Epoch 1:   0%|          | 14/5005 [02:40<12:53:32,  9.30s/it]Train Epoch 1:   0%|          | 14/5005 [02:40<12:52:28,  9.29s/it]Train Epoch 1:   0%|          | 14/5005 [02:40<13:06:08,  9.45s/it]Train Epoch 1:   0%|          | 15/5005 [02:49<12:45:49,  9.21s/it]Train Epoch 1:   0%|          | 15/5005 [02:49<12:37:22,  9.11s/it]Train Epoch 1:   0%|          | 15/5005 [02:49<12:36:14,  9.09s/it]Train Epoch 1:   0%|          | 15/5005 [02:49<12:45:20,  9.20s/it]Train Epoch 1:   0%|          | 16/5005 [02:58<12:33:06,  9.06s/it]Train Epoch 1:   0%|          | 16/5005 [02:58<12:27:10,  8.99s/it]Train Epoch 1:   0%|          | 16/5005 [02:58<12:26:20,  8.98s/it]Train Epoch 1:   0%|          | 16/5005 [02:58<12:33:22,  9.06s/it]Train Epoch 1:   0%|          | 17/5005 [03:07<12:35:43,  9.09s/it]Train Epoch 1:   0%|          | 17/5005 [03:07<12:31:44,  9.04s/it]Train Epoch 1:   0%|          | 17/5005 [03:07<12:33:43,  9.07s/it]Train Epoch 1:   0%|          | 17/5005 [03:07<12:32:32,  9.05s/it]Train Epoch 1:   0%|          | 18/5005 [03:16<12:33:23,  9.06s/it]Train Epoch 1:   0%|          | 18/5005 [03:16<12:29:56,  9.02s/it]Train Epoch 1:   0%|          | 18/5005 [03:16<12:30:03,  9.02s/it]Train Epoch 1:   0%|          | 18/5005 [03:16<12:31:34,  9.04s/it]Train Epoch 1:   0%|          | 19/5005 [03:24<12:21:19,  8.92s/it]Train Epoch 1:   0%|          | 19/5005 [03:24<12:18:31,  8.89s/it]Train Epoch 1:   0%|          | 19/5005 [03:24<12:19:34,  8.90s/it]Train Epoch 1:   0%|          | 19/5005 [03:24<12:19:12,  8.90s/it]Train Epoch 1:   0%|          | 20/5005 [03:33<12:13:09,  8.82s/it]Train Epoch 1:   0%|          | 20/5005 [03:33<12:11:35,  8.81s/it]Train Epoch 1:   0%|          | 20/5005 [03:33<12:12:05,  8.81s/it]Train Epoch 1:   0%|          | 20/5005 [03:33<12:12:16,  8.81s/it]Train Epoch 1:   0%|          | 21/5005 [03:42<12:09:28,  8.78s/it]Train Epoch 1:   0%|          | 21/5005 [03:42<12:08:25,  8.77s/it]Train Epoch 1:   0%|          | 21/5005 [03:42<12:08:47,  8.77s/it]Train Epoch 1:   0%|          | 21/5005 [03:42<12:08:15,  8.77s/it]Train Epoch 1:   0%|          | 22/5005 [03:50<12:02:08,  8.70s/it]Train Epoch 1:   0%|          | 22/5005 [03:50<12:05:47,  8.74s/it]Train Epoch 1:   0%|          | 22/5005 [03:50<12:02:04,  8.69s/it]Train Epoch 1:   0%|          | 22/5005 [03:50<12:02:10,  8.70s/it]Train Epoch 1:   0%|          | 23/5005 [03:59<11:59:12,  8.66s/it]Train Epoch 1:   0%|          | 23/5005 [03:59<12:01:33,  8.69s/it]Train Epoch 1:   0%|          | 23/5005 [03:59<11:59:12,  8.66s/it]Train Epoch 1:   0%|          | 23/5005 [03:59<11:59:08,  8.66s/it]Train Epoch 1:   0%|          | 24/5005 [04:07<11:57:43,  8.65s/it]Train Epoch 1:   0%|          | 24/5005 [04:07<11:59:21,  8.67s/it]Train Epoch 1:   0%|          | 24/5005 [04:07<11:58:38,  8.66s/it]Train Epoch 1:   0%|          | 24/5005 [04:08<11:59:59,  8.67s/it]Train Epoch 1:   0%|          | 25/5005 [04:16<11:56:47,  8.64s/it]Train Epoch 1:   0%|          | 25/5005 [04:16<11:57:56,  8.65s/it]Train Epoch 1:   0%|          | 25/5005 [04:16<11:57:52,  8.65s/it]Train Epoch 1:   0%|          | 25/5005 [04:16<11:57:34,  8.65s/it]Train Epoch 1:   1%|          | 26/5005 [04:25<12:07:25,  8.77s/it]Train Epoch 1:   1%|          | 26/5005 [04:25<12:09:28,  8.79s/it]Train Epoch 1:   1%|          | 26/5005 [04:27<12:45:09,  9.22s/it]Train Epoch 1:   1%|          | 26/5005 [04:27<12:44:59,  9.22s/it]Train Epoch 1:   1%|          | 27/5005 [04:36<12:48:16,  9.26s/it]Train Epoch 1:   1%|          | 27/5005 [04:36<12:50:10,  9.28s/it]Train Epoch 1:   1%|          | 27/5005 [04:36<12:47:36,  9.25s/it]Train Epoch 1:   1%|          | 27/5005 [04:36<12:50:47,  9.29s/it]Train Epoch 1:   1%|          | 28/5005 [04:44<12:31:26,  9.06s/it]Train Epoch 1:   1%|          | 28/5005 [04:45<12:40:49,  9.17s/it]Train Epoch 1:   1%|          | 28/5005 [04:45<12:32:58,  9.08s/it]Train Epoch 1:   1%|          | 28/5005 [04:45<12:42:55,  9.20s/it]Train Epoch 1:   1%|          | 29/5005 [04:53<12:22:58,  8.96s/it]Train Epoch 1:   1%|          | 29/5005 [04:53<12:34:50,  9.10s/it]Train Epoch 1:   1%|          | 29/5005 [04:55<13:02:33,  9.44s/it]Train Epoch 1:   1%|          | 29/5005 [04:55<13:11:09,  9.54s/it]Train Epoch 1:   1%|          | 30/5005 [05:03<12:46:54,  9.25s/it]Train Epoch 1:   1%|          | 30/5005 [05:03<12:37:58,  9.14s/it]Train Epoch 1:   1%|          | 30/5005 [05:06<13:39:58,  9.89s/it]Train Epoch 1:   1%|          | 30/5005 [05:06<13:51:37, 10.03s/it]Train Epoch 1:   1%|          | 31/5005 [05:14<13:22:33,  9.68s/it]Train Epoch 1:   1%|          | 31/5005 [05:14<13:29:55,  9.77s/it]Train Epoch 1:   1%|          | 31/5005 [05:14<13:08:08,  9.51s/it]Train Epoch 1:   1%|          | 31/5005 [05:14<13:19:19,  9.64s/it]Train Epoch 1:   1%|          | 32/5005 [05:23<12:57:52,  9.39s/it]Train Epoch 1:   1%|          | 32/5005 [05:23<13:03:42,  9.46s/it]Train Epoch 1:   1%|          | 32/5005 [05:23<12:47:39,  9.26s/it]Train Epoch 1:   1%|          | 32/5005 [05:23<12:56:08,  9.36s/it]Train Epoch 1:   1%|          | 33/5005 [05:32<12:40:28,  9.18s/it]Train Epoch 1:   1%|          | 33/5005 [05:32<12:44:14,  9.22s/it]Train Epoch 1:   1%|          | 33/5005 [05:32<12:33:11,  9.09s/it]Train Epoch 1:   1%|          | 33/5005 [05:32<12:38:26,  9.15s/it]Train Epoch 1:   1%|          | 34/5005 [05:40<12:30:34,  9.06s/it]Train Epoch 1:   1%|          | 34/5005 [05:40<12:32:16,  9.08s/it]Train Epoch 1:   1%|          | 34/5005 [05:40<12:26:09,  9.01s/it]Train Epoch 1:   1%|          | 34/5005 [05:41<12:29:02,  9.04s/it]Train Epoch 1:   1%|          | 35/5005 [05:49<12:20:00,  8.93s/it]Train Epoch 1:   1%|          | 35/5005 [05:49<12:21:30,  8.95s/it]Train Epoch 1:   1%|          | 35/5005 [05:49<12:17:04,  8.90s/it]Train Epoch 1:   1%|          | 35/5005 [05:49<12:18:38,  8.92s/it]Train Epoch 1:   1%|          | 36/5005 [05:58<12:12:20,  8.84s/it]Train Epoch 1:   1%|          | 36/5005 [05:58<12:13:19,  8.85s/it]Train Epoch 1:   1%|          | 36/5005 [05:58<12:10:05,  8.82s/it]Train Epoch 1:   1%|          | 36/5005 [05:58<12:11:26,  8.83s/it]Train Epoch 1:   1%|          | 37/5005 [06:06<12:06:51,  8.78s/it]Train Epoch 1:   1%|          | 37/5005 [06:06<12:07:32,  8.79s/it]Train Epoch 1:   1%|          | 37/5005 [06:06<12:04:53,  8.75s/it]Train Epoch 1:   1%|          | 37/5005 [06:06<12:06:26,  8.77s/it]Train Epoch 1:   1%|          | 38/5005 [06:15<12:03:18,  8.74s/it]Train Epoch 1:   1%|          | 38/5005 [06:15<12:04:19,  8.75s/it]Train Epoch 1:   1%|          | 38/5005 [06:15<12:01:37,  8.72s/it]Train Epoch 1:   1%|          | 38/5005 [06:15<12:03:54,  8.74s/it]Train Epoch 1:   1%|          | 39/5005 [06:24<12:03:58,  8.75s/it]Train Epoch 1:   1%|          | 39/5005 [06:24<12:03:58,  8.75s/it]Train Epoch 1:   1%|          | 39/5005 [06:24<12:02:11,  8.73s/it]Train Epoch 1:   1%|          | 39/5005 [06:24<12:02:48,  8.73s/it]Train Epoch 1:   1%|          | 40/5005 [06:32<12:01:55,  8.72s/it]Train Epoch 1:   1%|          | 40/5005 [06:32<12:02:37,  8.73s/it]Train Epoch 1:   1%|          | 40/5005 [06:32<12:00:39,  8.71s/it]Train Epoch 1:   1%|          | 40/5005 [06:33<12:01:38,  8.72s/it]Train Epoch 1:   1%|          | 41/5005 [06:41<11:59:31,  8.70s/it]Train Epoch 1:   1%|          | 41/5005 [06:41<12:00:57,  8.71s/it]Train Epoch 1:   1%|          | 41/5005 [06:41<11:59:41,  8.70s/it]Train Epoch 1:   1%|          | 41/5005 [06:41<11:59:23,  8.70s/it]Train Epoch 1:   1%|          | 42/5005 [06:50<11:56:49,  8.67s/it]Train Epoch 1:   1%|          | 42/5005 [06:50<11:57:36,  8.68s/it]Train Epoch 1:   1%|          | 42/5005 [06:50<11:57:16,  8.67s/it]Train Epoch 1:   1%|          | 42/5005 [06:50<11:57:00,  8.67s/it]Train Epoch 1:   1%|          | 43/5005 [06:58<11:56:25,  8.66s/it]Train Epoch 1:   1%|          | 43/5005 [06:58<11:56:26,  8.66s/it]Train Epoch 1:   1%|          | 43/5005 [06:58<11:55:41,  8.65s/it]Train Epoch 1:   1%|          | 43/5005 [06:58<11:55:37,  8.65s/it]Train Epoch 1:   1%|          | 44/5005 [07:07<11:56:15,  8.66s/it]Train Epoch 1:   1%|          | 44/5005 [07:07<11:56:40,  8.67s/it]Train Epoch 1:   1%|          | 44/5005 [07:07<11:56:11,  8.66s/it]Train Epoch 1:   1%|          | 44/5005 [07:07<11:54:14,  8.64s/it]Train Epoch 1:   1%|          | 45/5005 [07:15<11:55:23,  8.65s/it]Train Epoch 1:   1%|          | 45/5005 [07:16<11:52:15,  8.62s/it]Train Epoch 1:   1%|          | 45/5005 [07:16<11:56:22,  8.67s/it]Train Epoch 1:   1%|          | 45/5005 [07:16<11:57:41,  8.68s/it]Train Epoch 1:   1%|          | 46/5005 [07:24<11:57:41,  8.68s/it]Train Epoch 1:   1%|          | 46/5005 [07:24<11:56:45,  8.67s/it]Train Epoch 1:   1%|          | 46/5005 [07:24<11:56:12,  8.67s/it]Train Epoch 1:   1%|          | 46/5005 [07:24<11:58:58,  8.70s/it]Train Epoch 1:   1%|          | 47/5005 [07:33<11:54:59,  8.65s/it]Train Epoch 1:   1%|          | 47/5005 [07:33<11:55:06,  8.65s/it]Train Epoch 1:   1%|          | 47/5005 [07:33<11:53:44,  8.64s/it]Train Epoch 1:   1%|          | 47/5005 [07:33<11:54:03,  8.64s/it]Train Epoch 1:   1%|          | 48/5005 [07:41<11:52:56,  8.63s/it]Train Epoch 1:   1%|          | 48/5005 [07:41<11:52:41,  8.63s/it]Train Epoch 1:   1%|          | 48/5005 [07:41<11:51:59,  8.62s/it]Train Epoch 1:   1%|          | 48/5005 [07:42<11:54:57,  8.65s/it]Train Epoch 1:   1%|          | 49/5005 [07:50<11:51:58,  8.62s/it]Train Epoch 1:   1%|          | 49/5005 [07:50<11:52:16,  8.62s/it]Train Epoch 1:   1%|          | 49/5005 [07:50<11:51:30,  8.61s/it]Train Epoch 1:   1%|          | 49/5005 [07:50<11:53:22,  8.64s/it]Train Epoch 1:   1%|          | 50/5005 [07:59<11:53:14,  8.64s/it]Train Epoch 1:   1%|          | 50/5005 [07:59<11:53:55,  8.64s/it]Train Epoch 1:   1%|          | 50/5005 [07:59<11:53:07,  8.64s/it]Train Epoch 1:   1%|          | 50/5005 [07:59<11:54:21,  8.65s/it]Train Epoch 1:   1%|          | 51/5005 [08:07<11:53:22,  8.64s/it]Train Epoch 1:   1%|          | 51/5005 [08:07<11:52:59,  8.64s/it]Train Epoch 1:   1%|          | 51/5005 [08:07<11:52:34,  8.63s/it]Train Epoch 1:   1%|          | 51/5005 [08:08<11:53:38,  8.64s/it]Train Epoch 1:   1%|          | 52/5005 [08:16<11:53:42,  8.65s/it]Train Epoch 1:   1%|          | 52/5005 [08:16<11:53:50,  8.65s/it]Train Epoch 1:   1%|          | 52/5005 [08:16<11:53:16,  8.64s/it]Train Epoch 1:   1%|          | 52/5005 [08:16<11:51:11,  8.62s/it]Train Epoch 1:   1%|          | 53/5005 [08:25<11:50:46,  8.61s/it]Train Epoch 1:   1%|          | 53/5005 [08:25<11:50:46,  8.61s/it]Train Epoch 1:   1%|          | 53/5005 [08:25<11:50:08,  8.60s/it]Train Epoch 1:   1%|          | 53/5005 [08:25<11:51:23,  8.62s/it]Train Epoch 1:   1%|          | 54/5005 [08:33<11:53:45,  8.65s/it]Train Epoch 1:   1%|          | 54/5005 [08:33<11:53:26,  8.65s/it]Train Epoch 1:   1%|          | 54/5005 [08:33<11:54:10,  8.65s/it]Train Epoch 1:   1%|          | 54/5005 [08:33<11:54:35,  8.66s/it]Train Epoch 1:   1%|          | 55/5005 [08:42<11:58:15,  8.71s/it]Train Epoch 1:   1%|          | 55/5005 [08:42<11:58:53,  8.71s/it]Train Epoch 1:   1%|          | 55/5005 [08:42<12:05:17,  8.79s/it]Train Epoch 1:   1%|          | 55/5005 [08:42<12:03:03,  8.76s/it]Train Epoch 1:   1%|          | 56/5005 [08:51<12:02:25,  8.76s/it]Train Epoch 1:   1%|          | 56/5005 [08:51<12:02:07,  8.75s/it]Train Epoch 1:   1%|          | 56/5005 [08:51<11:58:37,  8.71s/it]Train Epoch 1:   1%|          | 56/5005 [08:51<12:01:17,  8.74s/it]Train Epoch 1:   1%|          | 57/5005 [09:00<11:57:16,  8.70s/it]Train Epoch 1:   1%|          | 57/5005 [09:00<11:56:38,  8.69s/it]Train Epoch 1:   1%|          | 57/5005 [09:00<11:54:27,  8.66s/it]Train Epoch 1:   1%|          | 57/5005 [09:00<11:56:12,  8.68s/it]Train Epoch 1:   1%|          | 58/5005 [09:08<11:54:17,  8.66s/it]Train Epoch 1:   1%|          | 58/5005 [09:08<11:54:25,  8.66s/it]Train Epoch 1:   1%|          | 58/5005 [09:08<11:52:33,  8.64s/it]Train Epoch 1:   1%|          | 58/5005 [09:08<11:54:20,  8.66s/it]Train Epoch 1:   1%|          | 59/5005 [09:17<11:55:57,  8.69s/it]Train Epoch 1:   1%|          | 59/5005 [09:17<11:56:44,  8.69s/it]Train Epoch 1:   1%|          | 59/5005 [09:19<12:39:55,  9.22s/it]Train Epoch 1:   1%|          | 59/5005 [09:19<12:42:38,  9.25s/it]Train Epoch 1:   1%|          | 60/5005 [09:27<12:37:19,  9.19s/it]Train Epoch 1:   1%|          | 60/5005 [09:27<12:22:49,  9.01s/it]Train Epoch 1:   1%|          | 60/5005 [09:29<13:11:44,  9.61s/it]Train Epoch 1:   1%|          | 60/5005 [09:29<13:30:02,  9.83s/it]Train Epoch 1:   1%|          | 61/5005 [09:38<12:51:28,  9.36s/it]Train Epoch 1:   1%|          | 61/5005 [09:38<13:07:48,  9.56s/it]Train Epoch 1:   1%|          | 61/5005 [09:38<12:41:46,  9.24s/it]Train Epoch 1:   1%|          | 61/5005 [09:38<12:58:00,  9.44s/it]Train Epoch 1:   1%|          | 62/5005 [09:47<12:51:11,  9.36s/it]Train Epoch 1:   1%|          | 62/5005 [09:47<12:45:02,  9.29s/it]Train Epoch 1:   1%|          | 62/5005 [09:48<13:10:29,  9.60s/it]Train Epoch 1:   1%|          | 62/5005 [09:48<13:05:53,  9.54s/it]Train Epoch 1:   1%|▏         | 63/5005 [09:56<12:42:25,  9.26s/it]Train Epoch 1:   1%|▏         | 63/5005 [09:56<12:59:05,  9.46s/it]Train Epoch 1:   1%|▏         | 63/5005 [09:56<12:54:40,  9.41s/it]Train Epoch 1:   1%|▏         | 63/5005 [09:56<12:37:58,  9.20s/it]Train Epoch 1:   1%|▏         | 64/5005 [10:05<12:25:12,  9.05s/it]Train Epoch 1:   1%|▏         | 64/5005 [10:05<12:35:57,  9.18s/it]Train Epoch 1:   1%|▏         | 64/5005 [10:05<12:21:27,  9.00s/it]Train Epoch 1:   1%|▏         | 64/5005 [10:05<12:36:02,  9.18s/it]Train Epoch 1:   1%|▏         | 65/5005 [10:13<12:15:31,  8.93s/it]Train Epoch 1:   1%|▏         | 65/5005 [10:14<12:12:34,  8.90s/it]Train Epoch 1:   1%|▏         | 65/5005 [10:14<12:25:01,  9.05s/it]Train Epoch 1:   1%|▏         | 65/5005 [10:14<12:23:06,  9.03s/it]Train Epoch 1:   1%|▏         | 66/5005 [10:22<12:10:06,  8.87s/it]Train Epoch 1:   1%|▏         | 66/5005 [10:22<12:15:26,  8.93s/it]Train Epoch 1:   1%|▏         | 66/5005 [10:22<12:08:20,  8.85s/it]Train Epoch 1:   1%|▏         | 66/5005 [10:22<12:15:10,  8.93s/it]Train Epoch 1:   1%|▏         | 67/5005 [10:31<12:05:09,  8.81s/it]Train Epoch 1:   1%|▏         | 67/5005 [10:31<12:09:23,  8.86s/it]Train Epoch 1:   1%|▏         | 67/5005 [10:32<12:29:09,  9.10s/it]Train Epoch 1:   1%|▏         | 67/5005 [10:32<12:33:02,  9.15s/it]Train Epoch 1:   1%|▏         | 68/5005 [10:41<12:28:18,  9.09s/it]Train Epoch 1:   1%|▏         | 68/5005 [10:41<12:18:35,  8.98s/it]Train Epoch 1:   1%|▏         | 68/5005 [10:42<12:56:24,  9.44s/it]Train Epoch 1:   1%|▏         | 68/5005 [10:42<12:51:41,  9.38s/it]Train Epoch 1:   1%|▏         | 69/5005 [10:50<12:33:57,  9.16s/it]Train Epoch 1:   1%|▏         | 69/5005 [10:50<12:44:21,  9.29s/it]Train Epoch 1:   1%|▏         | 69/5005 [10:50<12:28:17,  9.10s/it]Train Epoch 1:   1%|▏         | 69/5005 [10:50<12:37:52,  9.21s/it]Train Epoch 1:   1%|▏         | 70/5005 [10:59<12:22:52,  9.03s/it]Train Epoch 1:   1%|▏         | 70/5005 [10:59<12:29:54,  9.12s/it]Train Epoch 1:   1%|▏         | 70/5005 [10:59<12:18:41,  8.98s/it]Train Epoch 1:   1%|▏         | 70/5005 [10:59<12:25:21,  9.06s/it]Train Epoch 1:   1%|▏         | 71/5005 [11:08<12:12:54,  8.91s/it]Train Epoch 1:   1%|▏         | 71/5005 [11:08<12:18:39,  8.98s/it]Train Epoch 1:   1%|▏         | 71/5005 [11:08<12:09:51,  8.88s/it]Train Epoch 1:   1%|▏         | 71/5005 [11:08<12:14:59,  8.94s/it]Train Epoch 1:   1%|▏         | 72/5005 [11:16<12:05:18,  8.82s/it]Train Epoch 1:   1%|▏         | 72/5005 [11:16<12:09:49,  8.88s/it]Train Epoch 1:   1%|▏         | 72/5005 [11:16<12:03:37,  8.80s/it]Train Epoch 1:   1%|▏         | 72/5005 [11:16<12:06:34,  8.84s/it]Train Epoch 1:   1%|▏         | 73/5005 [11:25<12:02:17,  8.79s/it]Train Epoch 1:   1%|▏         | 73/5005 [11:25<11:57:56,  8.73s/it]Train Epoch 1:   1%|▏         | 73/5005 [11:25<12:02:18,  8.79s/it]Train Epoch 1:   1%|▏         | 73/5005 [11:25<12:00:10,  8.76s/it]Train Epoch 1:   1%|▏         | 74/5005 [11:34<11:57:58,  8.74s/it]Train Epoch 1:   1%|▏         | 74/5005 [11:34<11:55:24,  8.70s/it]Train Epoch 1:   1%|▏         | 74/5005 [11:34<11:58:37,  8.74s/it]Train Epoch 1:   1%|▏         | 74/5005 [11:34<11:57:34,  8.73s/it]Train Epoch 1:   1%|▏         | 75/5005 [11:42<11:52:05,  8.67s/it]Train Epoch 1:   1%|▏         | 75/5005 [11:42<11:54:40,  8.70s/it]Train Epoch 1:   1%|▏         | 75/5005 [11:42<11:52:44,  8.67s/it]Train Epoch 1:   1%|▏         | 75/5005 [11:42<11:54:19,  8.69s/it]Train Epoch 1:   2%|▏         | 76/5005 [11:51<11:50:23,  8.65s/it]Train Epoch 1:   2%|▏         | 76/5005 [11:51<11:52:16,  8.67s/it]Train Epoch 1:   2%|▏         | 76/5005 [11:51<11:51:16,  8.66s/it]Train Epoch 1:   2%|▏         | 76/5005 [11:51<11:51:57,  8.67s/it]Train Epoch 1:   2%|▏         | 77/5005 [11:59<11:49:33,  8.64s/it]Train Epoch 1:   2%|▏         | 77/5005 [11:59<11:49:42,  8.64s/it]Train Epoch 1:   2%|▏         | 77/5005 [12:01<12:38:33,  9.24s/it]Train Epoch 1:   2%|▏         | 77/5005 [12:01<12:39:52,  9.25s/it]Train Epoch 1:   2%|▏         | 78/5005 [12:10<12:37:29,  9.22s/it]Train Epoch 1:   2%|▏         | 78/5005 [12:10<12:24:54,  9.07s/it]Train Epoch 1:   2%|▏         | 78/5005 [12:10<12:38:09,  9.23s/it]Train Epoch 1:   2%|▏         | 78/5005 [12:10<12:26:51,  9.09s/it]Train Epoch 1:   2%|▏         | 79/5005 [12:19<12:13:47,  8.94s/it]Train Epoch 1:   2%|▏         | 79/5005 [12:19<12:13:47,  8.94s/it]Train Epoch 1:   2%|▏         | 79/5005 [12:19<12:23:50,  9.06s/it]Train Epoch 1:   2%|▏         | 79/5005 [12:19<12:23:59,  9.06s/it]Train Epoch 1:   2%|▏         | 80/5005 [12:27<12:06:39,  8.85s/it]Train Epoch 1:   2%|▏         | 80/5005 [12:27<12:06:36,  8.85s/it]Train Epoch 1:   2%|▏         | 80/5005 [12:27<12:14:01,  8.94s/it]Train Epoch 1:   2%|▏         | 80/5005 [12:27<12:14:07,  8.94s/it]Train Epoch 1:   2%|▏         | 81/5005 [12:36<11:58:04,  8.75s/it]Train Epoch 1:   2%|▏         | 81/5005 [12:36<11:59:54,  8.77s/it]Train Epoch 1:   2%|▏         | 81/5005 [12:36<12:04:24,  8.83s/it]Train Epoch 1:   2%|▏         | 81/5005 [12:36<12:05:35,  8.84s/it]Train Epoch 1:   2%|▏         | 82/5005 [12:45<12:00:05,  8.78s/it]Train Epoch 1:   2%|▏         | 82/5005 [12:45<12:00:10,  8.78s/it]Train Epoch 1:   2%|▏         | 82/5005 [12:46<12:23:34,  9.06s/it]Train Epoch 1:   2%|▏         | 82/5005 [12:46<12:24:24,  9.07s/it]Train Epoch 1:   2%|▏         | 83/5005 [12:54<12:06:15,  8.85s/it]Train Epoch 1:   2%|▏         | 83/5005 [12:54<12:08:07,  8.88s/it]Train Epoch 1:   2%|▏         | 83/5005 [12:54<12:18:16,  9.00s/it]Train Epoch 1:   2%|▏         | 83/5005 [12:54<12:18:30,  9.00s/it]Train Epoch 1:   2%|▏         | 84/5005 [13:03<12:02:17,  8.81s/it]Train Epoch 1:   2%|▏         | 84/5005 [13:03<12:10:28,  8.91s/it]Train Epoch 1:   2%|▏         | 84/5005 [13:03<12:05:08,  8.84s/it]Train Epoch 1:   2%|▏         | 84/5005 [13:03<12:10:29,  8.91s/it]Train Epoch 1:   2%|▏         | 85/5005 [13:11<12:01:09,  8.79s/it]Train Epoch 1:   2%|▏         | 85/5005 [13:12<12:06:55,  8.87s/it]Train Epoch 1:   2%|▏         | 85/5005 [13:12<12:03:04,  8.82s/it]Train Epoch 1:   2%|▏         | 85/5005 [13:12<12:07:00,  8.87s/it]Train Epoch 1:   2%|▏         | 86/5005 [13:20<11:55:38,  8.73s/it]Train Epoch 1:   2%|▏         | 86/5005 [13:20<11:54:13,  8.71s/it]Train Epoch 1:   2%|▏         | 86/5005 [13:22<12:41:25,  9.29s/it]Train Epoch 1:   2%|▏         | 86/5005 [13:22<12:44:22,  9.32s/it]Train Epoch 1:   2%|▏         | 87/5005 [13:30<12:33:31,  9.19s/it]Train Epoch 1:   2%|▏         | 87/5005 [13:30<12:32:28,  9.18s/it]Train Epoch 1:   2%|▏         | 87/5005 [13:30<12:24:17,  9.08s/it]Train Epoch 1:   2%|▏         | 87/5005 [13:30<12:25:57,  9.10s/it]Train Epoch 1:   2%|▏         | 88/5005 [13:39<12:24:03,  9.08s/it]Train Epoch 1:   2%|▏         | 88/5005 [13:39<12:22:48,  9.06s/it]Train Epoch 1:   2%|▏         | 88/5005 [13:39<12:16:06,  8.98s/it]Train Epoch 1:   2%|▏         | 88/5005 [13:39<12:18:43,  9.01s/it]Train Epoch 1:   2%|▏         | 89/5005 [13:48<12:14:40,  8.97s/it]Train Epoch 1:   2%|▏         | 89/5005 [13:48<12:14:41,  8.97s/it]Train Epoch 1:   2%|▏         | 89/5005 [13:48<12:10:03,  8.91s/it]Train Epoch 1:   2%|▏         | 89/5005 [13:48<12:11:30,  8.93s/it]Train Epoch 1:   2%|▏         | 90/5005 [13:57<12:09:06,  8.90s/it]Train Epoch 1:   2%|▏         | 90/5005 [13:57<12:10:08,  8.91s/it]Train Epoch 1:   2%|▏         | 90/5005 [13:57<12:03:49,  8.84s/it]Train Epoch 1:   2%|▏         | 90/5005 [13:57<12:05:48,  8.86s/it]Train Epoch 1:   2%|▏         | 91/5005 [14:05<12:02:30,  8.82s/it]Train Epoch 1:   2%|▏         | 91/5005 [14:05<12:02:25,  8.82s/it]Train Epoch 1:   2%|▏         | 91/5005 [14:05<11:59:10,  8.78s/it]Train Epoch 1:   2%|▏         | 91/5005 [14:05<11:59:50,  8.79s/it]Train Epoch 1:   2%|▏         | 92/5005 [14:14<12:01:18,  8.81s/it]Train Epoch 1:   2%|▏         | 92/5005 [14:14<12:01:36,  8.81s/it]Train Epoch 1:   2%|▏         | 92/5005 [14:14<12:00:23,  8.80s/it]Train Epoch 1:   2%|▏         | 92/5005 [14:14<12:01:34,  8.81s/it]Train Epoch 1:   2%|▏         | 93/5005 [14:23<12:00:30,  8.80s/it]Train Epoch 1:   2%|▏         | 93/5005 [14:23<12:00:16,  8.80s/it]Train Epoch 1:   2%|▏         | 93/5005 [14:23<11:59:23,  8.79s/it]Train Epoch 1:   2%|▏         | 93/5005 [14:23<11:59:55,  8.79s/it]Train Epoch 1:   2%|▏         | 94/5005 [14:32<12:07:12,  8.88s/it]Train Epoch 1:   2%|▏         | 94/5005 [14:32<12:06:08,  8.87s/it]Train Epoch 1:   2%|▏         | 94/5005 [14:34<12:52:09,  9.43s/it]Train Epoch 1:   2%|▏         | 94/5005 [14:34<12:50:57,  9.42s/it]Train Epoch 1:   2%|▏         | 95/5005 [14:42<12:42:59,  9.32s/it]Train Epoch 1:   2%|▏         | 95/5005 [14:42<12:29:15,  9.16s/it]Train Epoch 1:   2%|▏         | 95/5005 [14:42<12:42:50,  9.32s/it]Train Epoch 1:   2%|▏         | 95/5005 [14:42<12:30:03,  9.17s/it]Train Epoch 1:   2%|▏         | 96/5005 [14:51<12:28:00,  9.14s/it]Train Epoch 1:   2%|▏         | 96/5005 [14:51<12:18:22,  9.02s/it]Train Epoch 1:   2%|▏         | 96/5005 [14:51<12:26:00,  9.12s/it]Train Epoch 1:   2%|▏         | 96/5005 [14:51<12:18:25,  9.03s/it]Train Epoch 1:   2%|▏         | 97/5005 [15:00<12:17:03,  9.01s/it]Train Epoch 1:   2%|▏         | 97/5005 [15:00<12:10:31,  8.93s/it]Train Epoch 1:   2%|▏         | 97/5005 [15:00<12:16:00,  9.00s/it]Train Epoch 1:   2%|▏         | 97/5005 [15:00<12:10:42,  8.93s/it]Train Epoch 1:   2%|▏         | 98/5005 [15:09<12:15:31,  8.99s/it]Train Epoch 1:   2%|▏         | 98/5005 [15:09<12:15:36,  8.99s/it]Train Epoch 1:   2%|▏         | 98/5005 [15:09<12:11:00,  8.94s/it]Train Epoch 1:   2%|▏         | 97/5005 [15:09<12:46:58,  9.38s/it]
+Epoch: 1 | Batch: 1 | Loss: 6.9026 | EV: 0.8510
+Saved visualization to visualizations/epoch_1_batch_1.png
+Traceback (most recent call last):
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/train.py", line 99, in <module>
+    mp.spawn(main, args=(world_size, sys.argv[1:]), nprocs=world_size)
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 239, in spawn
+    return start_processes(fn, args, nprocs, join, daemon, start_method='spawn')
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 197, in start_processes
+    while not context.join():
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 160, in join
+    raise ProcessRaisedException(msg, error_index, failed_process.pid)
+torch.multiprocessing.spawn.ProcessRaisedException: 
+
+-- Process 0 terminated with the following error:
+Traceback (most recent call last):
+  File "/fp/projects01/ec232/venvs/g01env/lib/python3.10/site-packages/torch/multiprocessing/spawn.py", line 69, in _wrap
+    fn(i, *args)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/train.py", line 92, in main
+    trainer.train(args.epochs)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/train_utils_vit.py", line 244, in train
+    self._run_epoch(epoch)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/train_utils_vit.py", line 164, in _run_epoch
+    batch_ev_scores = explained_variance_batch(unnormalized_batch, segments)
+  File "/fp/projects01/ec232/torfor/learnableTokenizer/src/metrics.py", line 43, in explained_variance_batch
+    explained_variance = 1 - (within_variance / total_variance)
+ZeroDivisionError: float division by zero
+
+
+Job 1511520 consumed 17.3 billing hours from project ec232.
+
+Submitted 2025-04-06T11:50:17; waited 2.0 seconds in the queue after becoming eligible to run.
+
+Requested wallclock time: 2.0 days
+Elapsed wallclock time:   16.2 minutes
+
+Job failed.
+
+Task and CPU statistics:
+ID             CPUs  Tasks  CPU util                Start  Elapsed  Exit status
+1511520           4            0.0 %  2025-04-06T11:50:19  975.0 s  1
+1511520.batch     4      1   115.4 %  2025-04-06T11:50:19  975.0 s  1
+
+Used CPU time:   1.2 CPU hours
+Unused CPU time: 0.0 CPU seconds
+
+Memory statistics, in GiB:
+ID              Alloc   Usage
+1511520         100.0        
+1511520.batch   100.0    13.1
+
+Job 1511520 completed at Sun Apr 6 12:06:35 CEST 2025
