@@ -1,6 +1,5 @@
 import torch
 
-
 def explained_variance_batch(image_batch, superpixel_labels_batch):
     batch_size, num_channels, height, width = image_batch.shape
     explained_variance_scores = []
@@ -39,8 +38,13 @@ def explained_variance_batch(image_batch, superpixel_labels_batch):
         pixel_variances = (pixel_squares / pixel_counts.unsqueeze(1)) - (pixel_means ** 2)
         within_variance = pixel_variances.mean().item()
 
-        # Compute explained variance
-        explained_variance = 1 - (within_variance / total_variance)
+        # Safely compute explained variance
+        if total_variance == 0.0:
+            # Decide on a default value when there's no variability in the image
+            explained_variance = 0.0
+        else:
+            explained_variance = 1.0 - (within_variance / total_variance)
+
         explained_variance_scores.append(explained_variance)
 
     return explained_variance_scores

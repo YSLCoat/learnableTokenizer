@@ -17,8 +17,6 @@ from skimage.segmentation import mark_boundaries
 from datasets import BSDS500Dataset
 from metrics import explained_variance_batch
 from model import DifferentiableSuperpixelTokenizer
-# from train_utils import prepare_dataloader_tokenizer_training, prepare_datasets_tokenizer_training
-
 import torch.nn as nn
 
 def prepare_dataloader_tokenizer_training(dataset: Dataset, batch_size: int, shuffle: bool, num_workers: int):
@@ -29,7 +27,6 @@ def prepare_dataloader_tokenizer_training(dataset: Dataset, batch_size: int, shu
         shuffle=shuffle,
         num_workers=num_workers,
     )
-
 
 def prepare_datasets_tokenizer_training(args):
     # Define the postprocessing transformations
@@ -118,7 +115,7 @@ def reconstruct_from_segments_torch(image, segments):
     # 1) Unnormalize using ImageNet statistics
     mean = np.array([0.485, 0.456, 0.406])
     std  = np.array([0.229, 0.224, 0.225])
-    unnorm_image = image * std + mean  # broadcast each channel: image[..., c] = image[..., c]*std[c] + mean[c]
+    unnorm_image = image * std + mean  # broadcast each channel
 
     # 2) Reconstruct by segment-wise mean color
     reconstructed = np.zeros_like(unnorm_image)
@@ -163,38 +160,54 @@ def evaluate_pytorch_model(model, dataloader, device):
             ev_list.append(np.mean(ev_scores))
     return np.mean(ev_list)
 
-def evaluate_scikit_method(method, dataloader):
+def evaluate_scikit_method(method, dataloader, num_segments=196):
     """
     Evaluate a scikit-image based segmentation method (SLIC or Watershed).
     For each image, the method computes a segmentation, then reconstructs
     the image from segment-wise mean colors, and finally calculates the 
     explained variance.
+
+    Parameters
+    ----------
+    method : str
+        "slic" or "watershed"
+    dataloader : DataLoader
+        PyTorch DataLoader providing images in batches
+    num_segments : int
+        Desired number of segments (only relevant for slic / watershed)
     """
     ev_list = []
     for batch in tqdm(dataloader, desc=f"Evaluating {method}"):
         images = batch[0] if isinstance(batch, (list, tuple)) else batch
-        # images: tensor of shape (B, C, H, W) assumed to be in [0,1]
+        # images: tensor of shape (B, C, H, W). For SLIC/Watershed we assume [0,1].
         images_np = images.permute(0, 2, 3, 1).numpy()
         for img in images_np:
             if method == "slic":
-                # Use SLIC to generate ~196 superpixels (adjust parameters as needed)
-                segments = slic(img, n_segments=196, compactness=10, start_label=0)
+                # Use SLIC to generate ~ num_segments superpixels
+                segments = slic(img, n_segments=num_segments, compactness=10, start_label=0)
             elif method == "watershed":
                 # Compute gradient using sobel on a grayscale version
                 gradient = sobel(rgb2gray(img))
                 # Identify local minima as markers
                 coordinates = peak_local_max(-gradient, min_distance=5)
+                # Subsample or shuffle if we have too many local minima
+                if len(coordinates) > num_segments:
+                    chosen_idx = np.random.choice(len(coordinates), size=num_segments, replace=False)
+                    coordinates = coordinates[chosen_idx]
+
                 markers = np.zeros(gradient.shape, dtype=int)
                 for i, (r, c) in enumerate(coordinates, 1):
                     markers[r, c] = i
+
+                # If we have fewer coordinates than num_segments, we'll have fewer segments
                 segments = watershed(gradient, markers, mask=np.ones(gradient.shape, dtype=bool))
             else:
                 raise ValueError(f"Unknown method: {method}")
+
             reconstructed = reconstruct_from_segments(img, segments)
             ev = compute_explained_variance(img, reconstructed)
             ev_list.append(ev)
     return np.mean(ev_list)
-
 
 def visualize_segments(
     image_path: str,
@@ -250,10 +263,10 @@ def visualize_segments(
         ])
 
     # Apply transform
-    input_tensor = transform(pil_img)  # (C, H, W), values in [0,1] (if scikit)
+    input_tensor = transform(pil_img)  # (C, H, W)
     input_batch = input_tensor.unsqueeze(0)  # (1, C, H, W)
 
-    # Convert to numpy for scikit or reconstruction operations
+    # Convert to numpy for scikit or reconstruction
     # shape (H, W, C)
     img_np = input_tensor.permute(1, 2, 0).numpy()
 
@@ -274,7 +287,7 @@ def visualize_segments(
             reconstruction=True,
             embed_dim=192,
             device=device,
-            superpixel_algorithm="slic_segmentation"
+            superpixel_algorithm="boundary_path_finder"
         ).to(device)
 
         model.load_state_dict(torch.load(model_path, map_location=device))
@@ -301,11 +314,16 @@ def visualize_segments(
         grad_map = sobel(gray)
         # Identify local minima as markers
         coordinates = peak_local_max(-grad_map, min_distance=5)
+        # Subsample or shuffle to get approximately num_segments seeds
+        if len(coordinates) > num_segments:
+            chosen_idx = np.random.choice(len(coordinates), size=num_segments, replace=False)
+            coordinates = coordinates[chosen_idx]
+
         markers = np.zeros(grad_map.shape, dtype=int)
         for i, (r, c) in enumerate(coordinates, 1):
             markers[r, c] = i
-        segments = watershed(grad_map, markers, mask=np.ones(grad_map.shape, dtype=bool))
 
+        segments = watershed(grad_map, markers, mask=np.ones(grad_map.shape, dtype=bool))
         gradient_map = grad_map
         reconstructed = reconstruct_from_segments(img_np, segments)
 
@@ -319,29 +337,15 @@ def visualize_segments(
         raise ValueError("Unknown method. Choose from ['slic', 'watershed', 'pytorch'].")
 
     # 4) Create a "marked boundaries" image
-    #    We overlay red boundaries on top of the (resized) image
-    #    `mark_boundaries` expects the image in [0,1] or [0,255], but scikit usually
-    #    expects a floating image in [0,1], so for PyTorch (normalized) we should clamp + shift
-    #    if needed. But since we're already in [0,1] for scikit methods, it's fine.
-    #    For the PyTorch method, we used normalization for the model. 
-    #    However, `img_np` is AFTER reversing that normalization or not?
-    #
-    #    If you used ImageNet normalization for PyTorch, your img_np won't be in [0,1].
-    #    If you want the "visual" look in correct color, you can re-normalize. 
-    #    For simplicity, let's assume it's okay to just clamp it for display:
-    #
+    #    mark_boundaries expects the image in [0,1].
     if method == 'pytorch':
-        # De-normalize to a typical [0,1] range for display
-        # (C, H, W) => (H, W, C)
+        # De-normalize for display
         mean = np.array([0.485, 0.456, 0.406])
         std  = np.array([0.229, 0.224, 0.225])
-        # Reverse normalization
         img_np_for_mark = (img_np * std[None, None, :]) + mean[None, None, :]
-        # clamp to [0,1]
         img_np_for_mark = np.clip(img_np_for_mark, 0, 1)
     else:
-        # SLIC / watershed => already [0,1]
-        img_np_for_mark = img_np
+        img_np_for_mark = img_np  # Already [0,1] for SLIC/Watershed
 
     marked_image = mark_boundaries(
         img_np_for_mark, 
@@ -355,12 +359,12 @@ def visualize_segments(
 
     # Top-Left: Resized image
     axs[0, 0].imshow(np.clip(img_np_for_mark, 0, 1))
-    axs[0, 0].set_title("Resized Image")
+    axs[0, 0].set_title("Input Image")
     axs[0, 0].axis("off")
 
     # Top-Right: Marked boundaries
     axs[0, 1].imshow(marked_image)
-    axs[0, 1].set_title("Marked Boundaries")
+    axs[0, 1].set_title("Segments")
     axs[0, 1].axis("off")
 
     # Bottom-Left: Reconstructed
@@ -369,7 +373,6 @@ def visualize_segments(
     axs[1, 0].axis("off")
 
     # Bottom-Right: Gradient Map
-    # If we don't have a gradient map, just disable the axis
     if gradient_map is not None:
         axs[1, 1].imshow(gradient_map, cmap='gray')
         axs[1, 1].set_title("Gradient Map")
@@ -412,25 +415,32 @@ def main():
         default=None,
         help="If provided, will visualize the segmentation results for this single image."
     )
+    parser.add_argument(
+        "--num_segments",
+        type=int,
+        default=196,
+        help="Number of segments to use for slic or watershed (approx. for watershed)."
+    )
     args = parser.parse_args()
 
     if args.method == "pytorch" and args.model_path is None:
         parser.error("--model_path is required when method is 'pytorch'")
 
-    device = 'cpu'#"cuda" if torch.cuda.is_available() else "cpu"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
     if args.visualize_image_path:
-        # For demonstration (and to ensure it doesn't break the standard evaluation)
+        # Just visualize a single image and exit
         visualize_segments(
             image_path=args.visualize_image_path,
             method=args.method,
             model_path=args.model_path,
             device=device,
             img_size=args.img_size,
-            num_segments=196  # or any default number of segments you prefer
+            num_segments=args.num_segments
         )
         return  # Exit after visualization
 
+    # Prepare a dataset/dataloader
     if args.use_bsds:
         if args.method == "pytorch":
             transform = transforms.Compose([
@@ -451,28 +461,29 @@ def main():
         if args.method == "pytorch":
             dataloader = prepare_dataloader_tokenizer_training(val_dataset, args.batch_size, False, 0)
         else:
+            # Overwrite val_dataset transform for scikit methods (no normalization)
             val_dataset.transform = transforms.Compose([
                 transforms.Resize((args.img_size, args.img_size)),
                 transforms.ToTensor(),
             ])
             dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
+    # Evaluate
     if args.method == "pytorch":
-        NUM_CLUSTERS = 196 
         model = DifferentiableSuperpixelTokenizer(
-            max_segments=NUM_CLUSTERS,
+            max_segments=args.num_segments,
             n_channels=3,
             use_positional_embeddings=False,
             reconstruction=True,
             embed_dim=192,
             device=device,
-            superpixel_algorithm="voronoi_propagation"
+            superpixel_algorithm="voronoi_propagation"  # or "slic_segmentation"
         ).to(device)
         model.load_state_dict(torch.load(args.model_path, map_location=device))
         print(f"Loaded PyTorch model from {args.model_path}")
         ev_score = evaluate_pytorch_model(model, dataloader, device)
     else:
-        ev_score = evaluate_scikit_method(args.method, dataloader)
+        ev_score = evaluate_scikit_method(args.method, dataloader, num_segments=args.num_segments)
 
     print(f"Average explained variance for method '{args.method}': {ev_score:.4f}")
 
