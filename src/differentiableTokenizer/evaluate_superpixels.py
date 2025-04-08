@@ -287,7 +287,7 @@ def visualize_segments(
             reconstruction=True,
             embed_dim=192,
             device=device,
-            superpixel_algorithm="boundary_path_finder"
+            superpixel_algorithm="slic_segmentation"
         ).to(device)
 
         model.load_state_dict(torch.load(model_path, map_location=device))
@@ -477,7 +477,7 @@ def main():
             reconstruction=True,
             embed_dim=192,
             device=device,
-            superpixel_algorithm="voronoi_propagation"  # or "slic_segmentation"
+            superpixel_algorithm="slic_segmentation"  # or "slic_segmentation"
         ).to(device)
         model.load_state_dict(torch.load(args.model_path, map_location=device))
         print(f"Loaded PyTorch model from {args.model_path}")

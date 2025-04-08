@@ -219,7 +219,7 @@ class Trainer:
         val_acc = val_correct / val_total
 
         if self.scheduler is not None:
-            self.scheduler.step()
+            self.scheduler.step(epoch)
 
         print(
             f"Epoch: {epoch+1} | "
