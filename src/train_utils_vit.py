@@ -292,8 +292,7 @@ def prepare_datasets(args):
 
     postprocess_train = (
         transforms.Compose([
-            transforms.RandomResizedCrop(args.img_size),  # random crop + resize
-            transforms.RandomHorizontalFlip(),
+            transforms.Resize((args.img_size, args.img_size)),
             transforms.ToTensor(),
             transforms.Normalize(
                 mean=(0.485, 0.456, 0.406),

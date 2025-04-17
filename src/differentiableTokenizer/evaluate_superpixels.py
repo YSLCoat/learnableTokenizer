@@ -55,29 +55,29 @@ def prepare_datasets_tokenizer_training(args):
         nn.Identity(),
     )
     
-    # Create the training dataset
-    train_dataset = quixdata.QuixDataset(
-        args.data_folder_name,
-        args.data_subfolder_path,
-        override_extensions=[
-            'jpg',
-            'cls'
-        ],
-        train=True,
-    ).map_tuple(*postprocess_train)
+    # # Create the training dataset
+    # train_dataset = quixdata.QuixDataset(
+    #     args.data_folder_name,
+    #     args.data_subfolder_path,
+    #     override_extensions=[
+    #         'jpg',
+    #         'cls'
+    #     ],
+    #     train=True,
+    # ).map_tuple(*postprocess_train)
 
-    # Create the validation dataset
-    val_dataset = quixdata.QuixDataset(
-        args.data_folder_name,
-        args.data_subfolder_path,
-        override_extensions=[
-            'jpg',
-            'cls'
-        ],
-        train=False,
-    ).map_tuple(*postprocess_val)
+    # # Create the validation dataset
+    # val_dataset = quixdata.QuixDataset(
+    #     args.data_folder_name,
+    #     args.data_subfolder_path,
+    #     override_extensions=[
+    #         'jpg',
+    #         'cls'
+    #     ],
+    #     train=False,
+    # ).map_tuple(*postprocess_val)
     
-    return train_dataset, val_dataset
+    # return train_dataset, val_dataset
     
 
 def reconstruct_from_segments(image, segments):
@@ -416,6 +416,12 @@ def main():
         help="If provided, will visualize the segmentation results for this single image."
     )
     parser.add_argument(
+        "--split",
+        type=str,
+        default="Train",
+        help=""
+    )
+    parser.add_argument(
         "--num_segments",
         type=int,
         default=196,
@@ -454,7 +460,7 @@ def main():
                 transforms.Resize((args.img_size, args.img_size)),
                 transforms.ToTensor()  # values in [0,1]
             ])
-        dataset = BSDS500Dataset(root_dir=args.data_path, split="test", transform=transform)
+        dataset = BSDS500Dataset(root_dir=args.data_path, split=args.split, transform=transform)
         dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
     else:
         train_dataset, val_dataset = prepare_datasets_tokenizer_training(args)
@@ -477,7 +483,7 @@ def main():
             reconstruction=True,
             embed_dim=192,
             device=device,
-            superpixel_algorithm="slic_segmentation"  # or "slic_segmentation"
+            superpixel_algorithm="boundary_path_finder"  # or "slic_segmentation"
         ).to(device)
         model.load_state_dict(torch.load(args.model_path, map_location=device))
         print(f"Loaded PyTorch model from {args.model_path}")
